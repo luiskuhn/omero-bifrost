@@ -1,14 +1,21 @@
 
-"""Interface to the image management server
-This module contains the functionality to upload and download
-imaging data (raw and metadata) form the OMERO server (v5.6).
-It requires that the following software be installed within the Python
-environment you are loading this module:
-	* OMERO-py
-It contains the following functions:
-    * omero_connect - connects to server
-    * TODO...
-    
+"""Workflow-first interface to OMERO image and metadata operations.
+
+This CLI is designed to support automated execution in Nextflow and nf-core
+pipelines, while still being usable as a regular command line tool. It
+provides commands to query, push, and pull image data and FAIR-oriented
+metadata across OMERO servers.
+
+Current capabilities include:
+    * programmatic query of projects, datasets, and image IDs
+    * metadata-based image filtering (key-values and tags)
+    * image import/export and original file download
+    * metadata and annotation write operations
+
+Configuration supports credentials and an optional user group context for
+OMERO session scoping. This is a building block towards a multi-server
+"constellation" design where multiple OMERO endpoints are orchestrated from
+workflow code.
 """
 
 import typer
@@ -46,8 +53,8 @@ def query_list_all(
 
     import xml.etree.ElementTree as ET
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     if to_file:
         xml_tree = format_xml_ouput(fetch_all_objects(conn))
@@ -74,8 +81,8 @@ def query_dataset_id(
     
     import xml.etree.ElementTree as ET
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     ds_id = get_omero_dataset_id(conn, project, dataset)
 
@@ -123,8 +130,8 @@ def query_image_ids(
 
     tag_list = tag
 
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     if len(project_name_list) > 0:
         project_obj_list = []
@@ -173,9 +180,9 @@ def push_image_file(
     
     import xml.etree.ElementTree as ET
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port))
+    img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     output_map = {}
     output_count = 0
@@ -208,9 +215,9 @@ def push_image_folder(
     
     import xml.etree.ElementTree as ET
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    img_ids = register_image_folder_with_dataset_id(folder_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port))
+    img_ids = register_image_folder_with_dataset_id(folder_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     output_map = {}
     output_count = 0
@@ -241,8 +248,8 @@ def push_key_value(
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     #string format: key1:value1//key2:value2//key3:value3//...
     key_value_data = []
@@ -267,8 +274,8 @@ def push_image_tag(
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     tags = conn.getObjects("TagAnnotation", attributes={"textValue": tag_value})
     tags = list(tags)
@@ -279,10 +286,10 @@ def push_image_tag(
         tag = tags[0]
         tag_id = str(tag.getId())
     else:
-        tag_id = create_tag(tag_value, tag_desc, omero_username, omero_password, omero_host, str(omero_port))
+        tag_id = create_tag(tag_value, tag_desc, omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     if int(tag_id) > -1:
-        std_out, std_err = add_tag_to_image(image_id, tag_id, omero_username, omero_password, omero_host, str(omero_port))
+        std_out, std_err = add_tag_to_image(image_id, tag_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     conn.close()
 
@@ -299,9 +306,9 @@ def push_file_atch(
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    img_ann_id = attach_file_to_image(file_path, image_id, omero_username, omero_password, omero_host, str(omero_port))
+    img_ann_id = attach_file_to_image(file_path, image_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     print("[bold blue]File Annotation ID: " + str(img_ann_id))
 
@@ -323,9 +330,9 @@ def pull_ome_tiff_files(
 
     print("[bold green]Processing image ID list: " + str(img_id_list))
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
     
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     file_map = {}
     for img_id in img_id_list:
@@ -339,7 +346,7 @@ def pull_ome_tiff_files(
     for img_id in file_map.keys():
         ouput_file_path = os.path.join(output_path, "omero_img_id_" + str(img_id) + "__" + file_map[img_id] + ".ome.tiff")
         print("[bold blue]Pulling: " + ouput_file_path)
-        std_out, std_err = export_ome_tiff_file(img_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port))
+        std_out, std_err = export_ome_tiff_file(img_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
         print("[bold blue]Output: " + std_out)
         print("[bold red]Error: " + std_err)
 
@@ -363,9 +370,9 @@ def pull_original_image_files(
 
     print("[bold green]Processing image ID list: " + str(img_id_list))
     
-    omero_username, omero_password, omero_host, omero_port = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port))
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     orig_file_map = {}
     for img_id in img_id_list:
@@ -380,7 +387,7 @@ def pull_original_image_files(
     for orig_file_id in orig_file_map.keys():
         ouput_file_path = os.path.join(output_path, "omero_file_id_" + str(orig_file_id) + "__" + orig_file_map[orig_file_id])
         print("[bold blue]Pulling: " + ouput_file_path)
-        std_out, std_err = download_original_image_file(orig_file_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port))
+        std_out, std_err = download_original_image_file(orig_file_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
         print("[bold blue]Output: " + std_out)
         print("[bold red]Error: " + std_err)
 

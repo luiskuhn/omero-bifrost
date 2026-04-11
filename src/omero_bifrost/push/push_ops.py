@@ -1,5 +1,5 @@
 
-def register_image_file_with_dataset_id(file_path, dataset_id, usr, pwd, host, port=4064):
+def register_image_file_with_dataset_id(file_path, dataset_id, usr, pwd, host, port=4064, group=None):
     """
     This function imports an image file to an omero server using the OMERO-py (using Bio-formats)
     This function assumes OMERO-py (cli) is installed
@@ -23,9 +23,10 @@ def register_image_file_with_dataset_id(file_path, dataset_id, usr, pwd, host, p
     image_ids = []
 
     ds_id = dataset_id
+    group_arg = "" if group is None else " -g " + str(group)
 
     if ds_id != -1:
-        cmd = "omero import -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " -d " + str(int(ds_id)) + " " + file_path
+        cmd = "omero import -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " -d " + str(int(ds_id)) + " " + file_path
         proc = subprocess.Popen(cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
@@ -50,7 +51,7 @@ def register_image_file_with_dataset_id(file_path, dataset_id, usr, pwd, host, p
         image_ids = []
     return image_ids
 
-def register_image_folder_with_dataset_id(folder_path, dataset_id, usr, pwd, host, port=4064):
+def register_image_folder_with_dataset_id(folder_path, dataset_id, usr, pwd, host, port=4064, group=None):
     """
     """
 
@@ -59,9 +60,10 @@ def register_image_folder_with_dataset_id(folder_path, dataset_id, usr, pwd, hos
     image_ids = []
 
     ds_id = dataset_id
+    group_arg = "" if group is None else " -g " + str(group)
 
     if ds_id != -1:
-        cmd = "omero import -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " -d " + str(int(ds_id)) + " --depth 1 " + folder_path
+        cmd = "omero import -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " -d " + str(int(ds_id)) + " --depth 1 " + folder_path
         proc = subprocess.Popen(cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
@@ -85,7 +87,7 @@ def register_image_folder_with_dataset_id(folder_path, dataset_id, usr, pwd, hos
         image_ids = []
     return image_ids
 
-def attach_file_to_image(file_path, image_id, usr, pwd, host, port=4064):
+def attach_file_to_image(file_path, image_id, usr, pwd, host, port=4064, group=None):
     """
     This function imports an image file to an omero server using the OMERO-py (using Bio-formats)
     This function assumes OMERO-py (cli) is installed
@@ -109,10 +111,11 @@ def attach_file_to_image(file_path, image_id, usr, pwd, host, port=4064):
     original_file_id = ""
     file_ann_id = ""
     image_ann_link_id = ""
+    group_arg = "" if group is None else " -g " + str(group)
 
     # upload original file and get ID
 
-    cmd = "omero upload -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " " + file_path
+    cmd = "omero upload -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " " + file_path
     proc = subprocess.Popen(cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -128,7 +131,7 @@ def attach_file_to_image(file_path, image_id, usr, pwd, host, port=4064):
 
     # create new file annotation
 
-    cmd = "omero obj -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " " + "new FileAnnotation file=OriginalFile:" + original_file_id
+    cmd = "omero obj -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " " + "new FileAnnotation file=OriginalFile:" + original_file_id
 
     proc = subprocess.Popen(cmd,
                         stdout=subprocess.PIPE,
@@ -145,7 +148,7 @@ def attach_file_to_image(file_path, image_id, usr, pwd, host, port=4064):
 
     # create new annotation link
 
-    cmd = "omero obj -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " " + "new ImageAnnotationLink parent=Image:" + str(image_id) + " child=FileAnnotation:" + file_ann_id
+    cmd = "omero obj -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " " + "new ImageAnnotationLink parent=Image:" + str(image_id) + " child=FileAnnotation:" + file_ann_id
 
     proc = subprocess.Popen(cmd,
                         stdout=subprocess.PIPE,
@@ -162,15 +165,16 @@ def attach_file_to_image(file_path, image_id, usr, pwd, host, port=4064):
 
     return image_ann_link_id
 
-def create_tag(tag_value, tag_desc, usr, pwd, host, port=4064):
+def create_tag(tag_value, tag_desc, usr, pwd, host, port=4064, group=None):
     """
     """
 
     import subprocess
 
     tag_id = -1
+    group_arg = "" if group is None else " -g " + str(group)
 
-    cmd = "omero tag create -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " --name " + str(tag_value) + " --desc '" + str(tag_desc) + "'"
+    cmd = "omero tag create -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " --name " + str(tag_value) + " --desc '" + str(tag_desc) + "'"
     proc = subprocess.Popen(cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -187,13 +191,14 @@ def create_tag(tag_value, tag_desc, usr, pwd, host, port=4064):
     
     return tag_id
 
-def add_tag_to_image(image_id, tag_id, usr, pwd, host, port=4064):
+def add_tag_to_image(image_id, tag_id, usr, pwd, host, port=4064, group=None):
     """
     """
 
     import subprocess
+    group_arg = "" if group is None else " -g " + str(group)
     
-    cmd = "omero tag link -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " Image:" + str(image_id) + " " + str(tag_id)
+    cmd = "omero tag link -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " Image:" + str(image_id) + " " + str(tag_id)
     proc = subprocess.Popen(cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
