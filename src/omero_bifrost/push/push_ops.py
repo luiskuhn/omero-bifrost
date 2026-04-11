@@ -16,6 +16,10 @@ def _base_omero_cmd(usr, pwd, host, port=4064, group=None):
     return args
 
 
+def _import_defaults():
+    return ["--skip", "all", "-C", "--parallel-upload", "128"]
+
+
 def register_image_file_with_dataset_id(file_path, dataset_id, usr, pwd, host, port=4064, group=None):
     if int(dataset_id) < 0:
         raise ValueError("dataset_id must be a non-negative integer.")
@@ -23,6 +27,7 @@ def register_image_file_with_dataset_id(file_path, dataset_id, usr, pwd, host, p
     cmd = [
         "omero",
         "import",
+        *_import_defaults(),
         *_base_omero_cmd(usr, pwd, host, port, group),
         "-d",
         str(int(dataset_id)),
@@ -38,6 +43,7 @@ def register_image_folder_with_dataset_id(folder_path, dataset_id, usr, pwd, hos
     cmd = [
         "omero",
         "import",
+        *_import_defaults(),
         *_base_omero_cmd(usr, pwd, host, port, group),
         "-d",
         str(int(dataset_id)),
