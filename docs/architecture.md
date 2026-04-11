@@ -36,3 +36,16 @@ By favoring explicit inputs and outputs per command, pipelines can:
 ## Metadata and FAIR intent
 
 OMERO-Bifrost is FAIR-oriented and designed to integrate with community standards such as REMBI, MIFA, the OME model, and exchange formats like OME-TIFF (with Bio-Formats-compatible pathways where applicable).
+
+## OMERO CLI execution and error contract
+
+Subprocess-backed OMERO operations are centralized in `omero_cli_runner.run_omero_cli`, which always executes argument lists (`shell=False`) and captures `stdout`/`stderr` as text for deterministic downstream handling.
+
+Contract details:
+
+- Successful calls return a typed `CommandResult` with `returncode`, `stdout`, `stderr`, `cmd`, and optional `artifacts`.
+- Non-zero OMERO CLI exits raise `OmeroCliCommandError` and include the captured `CommandResult`.
+- Missing or malformed expected records in stdout (e.g., `Image:`, `OriginalFile:`, `TagAnnotation:`, `FileAnnotation:`, `ImageAnnotationLink:`) raise `OmeroCliParseError`.
+- CLI handlers map these controlled exceptions to deterministic terminal output using `ERROR|<ExceptionType>|<message>` and exit with non-zero status.
+
+This behavior is intended for workflow engines (Nextflow/nf-core) so failures are explicit, parseable, and never represented as ambiguous empty strings/lists.
