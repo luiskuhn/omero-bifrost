@@ -30,6 +30,7 @@ from omero_bifrost.query.query_ops import fetch_all_objects, print_data_tree, pr
 from omero_bifrost.push.push_ops import register_image_file_with_dataset_id, register_image_folder_with_dataset_id 
 from omero_bifrost.push.push_ops import attach_file_to_image, create_tag, add_tag_to_image, add_kv_to_image
 from omero_bifrost.pull.pull_ops import download_original_image_file, export_ome_tiff_file
+from omero_bifrost.utils.omero_cli_runner import OmeroCliError
 
 #####################################
 
@@ -41,6 +42,12 @@ pull_app = typer.Typer()
 app.add_typer(query_app, name="query", help="Query an OMERO server for Project, Dataset, and Image objects.")
 app.add_typer(push_app, name="push", help="Push image data into an OMERO Server.")
 app.add_typer(pull_app, name="pull", help="Pull image data from an OMERO Server.")
+
+
+
+def _handle_cli_error(exc: Exception, *, code: int = 2):
+    print(f"[bold red]ERROR|{exc.__class__.__name__}|{exc}")
+    raise typer.Exit(code=code)
 
 
 @query_app.command("list-all", help="Query all accessible OMERO objects")
@@ -177,12 +184,15 @@ def push_image_file(
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
-    
+
     import xml.etree.ElementTree as ET
-    
+
     omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    try:
+        img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    except (OmeroCliError, ValueError) as exc:
+        _handle_cli_error(exc)
 
     output_map = {}
     output_count = 0
@@ -212,12 +222,15 @@ def push_image_folder(
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
-    
+
     import xml.etree.ElementTree as ET
-    
+
     omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    img_ids = register_image_folder_with_dataset_id(folder_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    try:
+        img_ids = register_image_folder_with_dataset_id(folder_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    except (OmeroCliError, ValueError) as exc:
+        _handle_cli_error(exc)
 
     output_map = {}
     output_count = 0
@@ -273,28 +286,28 @@ def push_image_tag(
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
-    
+
     omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     tags = conn.getObjects("TagAnnotation", attributes={"textValue": tag_value})
     tags = list(tags)
 
-    tag_id = -1
+    try:
+        if len(tags) > 0:
+            tag_id = str(tags[0].getId())
+        else:
+            tag_id = create_tag(tag_value, tag_desc, omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
-    if len(tags) > 0:
-        tag = tags[0]
-        tag_id = str(tag.getId())
-    else:
-        tag_id = create_tag(tag_value, tag_desc, omero_username, omero_password, omero_host, str(omero_port), omero_group)
-
-    if int(tag_id) > -1:
-        std_out, std_err = add_tag_to_image(image_id, tag_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        result = add_tag_to_image(image_id, tag_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    except (OmeroCliError, ValueError) as exc:
+        conn.close()
+        _handle_cli_error(exc)
 
     conn.close()
 
-    print("[bold blue]Output: " + std_out)
-    print("[bold red]Error: " + std_err)
+    print("[bold blue]Output: " + result.stdout)
+    print("[bold red]Error: " + result.stderr)
 
 @push_app.command("file-atch", help="Attach a file to image")
 def push_file_atch(
@@ -305,10 +318,13 @@ def push_file_atch(
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
-    
+
     omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
-    img_ann_id = attach_file_to_image(file_path, image_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    try:
+        img_ann_id = attach_file_to_image(file_path, image_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+    except (OmeroCliError, ValueError) as exc:
+        _handle_cli_error(exc)
 
     print("[bold blue]File Annotation ID: " + str(img_ann_id))
 
@@ -329,9 +345,9 @@ def pull_ome_tiff_files(
         img_id_list = list(img_map.keys())
 
     print("[bold green]Processing image ID list: " + str(img_id_list))
-    
+
     omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
-    
+
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     file_map = {}
@@ -340,15 +356,16 @@ def pull_ome_tiff_files(
         if not img_id in file_map.keys():
                 file_map[img_id] = str(image.getName()).replace(" ", "_")
 
-    # TODO: fix, previously imported '.tif' files are not automatically exported as OME-TIFF by OMERO,
-    #       these files need to be downloaded as original files. Look into triggering OME-TIFF generation in OMERO
-
     for img_id in file_map.keys():
         ouput_file_path = os.path.join(output_path, "omero_img_id_" + str(img_id) + "__" + file_map[img_id] + ".ome.tiff")
         print("[bold blue]Pulling: " + ouput_file_path)
-        std_out, std_err = export_ome_tiff_file(img_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
-        print("[bold blue]Output: " + std_out)
-        print("[bold red]Error: " + std_err)
+        try:
+            result = export_ome_tiff_file(img_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        except (OmeroCliError, ValueError) as exc:
+            conn.close()
+            _handle_cli_error(exc)
+        print("[bold blue]Output: " + result.stdout)
+        print("[bold red]Error: " + result.stderr)
 
     conn.close()
 
@@ -369,7 +386,7 @@ def pull_original_image_files(
         img_id_list = list(img_map.keys())
 
     print("[bold green]Processing image ID list: " + str(img_id_list))
-    
+
     omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
 
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
@@ -380,16 +397,19 @@ def pull_original_image_files(
 
         if len(image.getFileset().listFiles()) > 0:
             orig_file_obj = image.getFileset().listFiles()[0] # assume first file is original image file
-            orig_file_id = str(orig_file_obj.getId()) 
+            orig_file_id = str(orig_file_obj.getId())
             if not orig_file_id in orig_file_map.keys():
                 orig_file_map[orig_file_id] = str(orig_file_obj.getName())
 
     for orig_file_id in orig_file_map.keys():
         ouput_file_path = os.path.join(output_path, "omero_file_id_" + str(orig_file_id) + "__" + orig_file_map[orig_file_id])
         print("[bold blue]Pulling: " + ouput_file_path)
-        std_out, std_err = download_original_image_file(orig_file_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
-        print("[bold blue]Output: " + std_out)
-        print("[bold red]Error: " + std_err)
+        try:
+            result = download_original_image_file(orig_file_id, ouput_file_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        except (OmeroCliError, ValueError) as exc:
+            conn.close()
+            _handle_cli_error(exc)
+        print("[bold blue]Output: " + result.stdout)
+        print("[bold red]Error: " + result.stderr)
 
     conn.close()
-

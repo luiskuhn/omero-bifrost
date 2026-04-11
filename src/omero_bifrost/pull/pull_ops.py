@@ -1,48 +1,48 @@
+from omero_bifrost.utils.omero_cli_runner import run_omero_cli
+
+
+def _base_omero_cmd(usr, pwd, host, port=4064, group=None):
+    args = ["-s", host, "-p", str(port), "-u", usr, "-w", pwd]
+    if group is not None:
+        args.extend(["-g", str(group)])
+    return args
+
 
 def download_original_image_file(orig_file_id, download_path, usr, pwd, host, port=4064, group=None):
-    """
-    """
+    if int(orig_file_id) < 0:
+        raise ValueError("orig_file_id must be a non-negative integer.")
 
-    import subprocess
+    cmd = [
+        "omero",
+        "download",
+        *_base_omero_cmd(usr, pwd, host, port, group),
+        str(orig_file_id),
+        str(download_path),
+    ]
+    return run_omero_cli(cmd)
 
-    if orig_file_id != -1:
-        group_arg = "" if group is None else " -g " + str(group)
-        cmd = "omero download -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " " + str(orig_file_id) + " " + download_path
-        proc = subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            shell=True,
-                            universal_newlines=True)
-
-        std_out, std_err = proc.communicate()
-    
-    return std_out, std_err
 
 def export_ome_tiff_file(image_id, download_path, usr, pwd, host, port=4064, group=None):
-    """
-    """
-
-    import subprocess
     import os
 
-    if image_id != -1:
-        
-        # add ome.tiff extension if missing in filename
-        name, ext = os.path.splitext(download_path)
-        if  ext != ".tif" and ext != ".tiff":
-            download_path = download_path + "ome.tiff"
+    if int(image_id) < 0:
+        raise ValueError("image_id must be a non-negative integer.")
 
-        group_arg = "" if group is None else " -g " + str(group)
-        cmd = "omero export -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " --file " + str(download_path) + " --type TIFF Image:" + str(image_id)
-        proc = subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            shell=True,
-                            universal_newlines=True)
+    name, ext = os.path.splitext(download_path)
+    if ext not in {".tif", ".tiff"}:
+        download_path = name + ".ome.tiff"
 
-        std_out, std_err = proc.communicate()
-    
-    return std_out, std_err
+    cmd = [
+        "omero",
+        "export",
+        *_base_omero_cmd(usr, pwd, host, port, group),
+        "--file",
+        str(download_path),
+        "--type",
+        "TIFF",
+        f"Image:{image_id}",
+    ]
+    return run_omero_cli(cmd)
 
 
 ########################################
@@ -79,4 +79,3 @@ def get_image_array(conn, image_id):
                 hypercube[t, c, :, :, z] = plane
 
     return hypercube
-
