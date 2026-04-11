@@ -11,7 +11,14 @@ def get_omero_config(config_file_path):
     omero_host = config.get('OmeroServerSection', 'omero.host')
     omero_port = int(config.get('OmeroServerSection', 'omero.port'))
 
-    return omero_username, omero_password, omero_host, omero_port
+    # optional user group context (kept backward compatible)
+    omero_group = None
+    if config.has_option('OmeroServerSection', 'omero.group'):
+        group_value = config.get('OmeroServerSection', 'omero.group').strip()
+        if group_value != "":
+            omero_group = group_value
+
+    return omero_username, omero_password, omero_host, omero_port, omero_group
 
 def format_xml_ouput(output_map):
 
@@ -30,7 +37,7 @@ def format_xml_ouput(output_map):
 
     return xml_tree
 
-def omero_connect(usr, pwd, host, port):
+def omero_connect(usr, pwd, host, port, group=None):
     """
     Connects to the OMERO Server with the provided username and password.
 
@@ -52,6 +59,20 @@ def omero_connect(usr, pwd, host, port):
 
     if not connected:
         print("Error: Connection not available")
+        return conn
+
+    if group is not None:
+        try:
+            if isinstance(group, str) and group.isdigit():
+                conn.SERVICE_OPTS.setOmeroGroup(int(group))
+            else:
+                target_groups = list(conn.getObjects("ExperimenterGroup", attributes={"name": str(group)}))
+                if len(target_groups) > 0:
+                    conn.SERVICE_OPTS.setOmeroGroup(target_groups[0].getId())
+                else:
+                    print("Warning: OMERO group not found: " + str(group))
+        except Exception as exc:
+            print("Warning: Failed to set OMERO group context: " + str(exc))
 
     return conn
 

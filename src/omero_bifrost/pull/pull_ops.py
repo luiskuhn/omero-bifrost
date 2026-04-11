@@ -1,12 +1,13 @@
 
-def download_original_image_file(orig_file_id, download_path, usr, pwd, host, port=4064):
+def download_original_image_file(orig_file_id, download_path, usr, pwd, host, port=4064, group=None):
     """
     """
 
     import subprocess
 
     if orig_file_id != -1:
-        cmd = "omero download -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " " + str(orig_file_id) + " " + download_path
+        group_arg = "" if group is None else " -g " + str(group)
+        cmd = "omero download -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " " + str(orig_file_id) + " " + download_path
         proc = subprocess.Popen(cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
@@ -17,7 +18,7 @@ def download_original_image_file(orig_file_id, download_path, usr, pwd, host, po
     
     return std_out, std_err
 
-def export_ome_tiff_file(image_id, download_path, usr, pwd, host, port=4064):
+def export_ome_tiff_file(image_id, download_path, usr, pwd, host, port=4064, group=None):
     """
     """
 
@@ -31,7 +32,8 @@ def export_ome_tiff_file(image_id, download_path, usr, pwd, host, port=4064):
         if  ext != ".tif" and ext != ".tiff":
             download_path = download_path + "ome.tiff"
 
-        cmd = "omero export -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + " --file " + str(download_path) + " --type TIFF Image:" + str(image_id)
+        group_arg = "" if group is None else " -g " + str(group)
+        cmd = "omero export -s " + host + " -p " + str(port) + " -u " + usr + " -w " + pwd + group_arg + " --file " + str(download_path) + " --type TIFF Image:" + str(image_id)
         proc = subprocess.Popen(cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
