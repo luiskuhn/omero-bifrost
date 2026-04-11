@@ -2,9 +2,11 @@
 
 <img align="left" width="100" height="100" src="https://github.com/qbicsoftware/omero-bifrost/blob/main/docs/images/bifrost_img.png?raw=true">
 
-Bifrost bridge for large-scale transfer of bioimage data using [OMERO servers](https://omero.readthedocs.io/en/stable/). `omero-bifrost` provides a Python package and CLI designed for workflow automation, especially in Nextflow and nf-core pipelines.
+**OMERO-Bifrost** is a workflow-oriented abstraction layer for interoperable image and (meta)data access across a constellation of [OMERO servers](https://omero.readthedocs.io/en/stable/).
 
-The tool focuses on reproducible access to image data and FAIR-oriented metadata operations while evolving toward a constellation model: multiple OMERO endpoints coordinated through one automation layer.
+It exposes consistent read/write operations through a Python package and CLI so the same data-management logic can run in local, HPC, and cloud environments. The primary design target is integration with Nextflow and nf-core processes/modules, where deterministic command interfaces and explicit file artifacts are key for portability and reproducibility.
+
+OMERO-Bifrost is FAIR-oriented by design and aligns metadata operations with community standards and formats, including REMBI and MIFA reporting expectations, the OME data model, Bio-Formats interoperability, and OME-TIFF exchange.
 
 <br>
 
@@ -57,12 +59,34 @@ Notes:
 
 ### Nextflow / nf-core orientation
 
-The CLI is intended to be called from workflow process scripts where each command performs one focused data operation (query, import, annotate, export) with explicit file inputs/outputs.
+The CLI is designed for process-level composition, where each invocation performs one focused operation with explicit, testable inputs and outputs.
 
 For pipeline design:
-- Keep OMERO credentials and group context in mounted config files or secret-managed env material.
-- Prefer command invocations that emit files (`--output` for query commands, exported data for pull commands).
-- Use image ID TSV artifacts to pass selected records between processes.
+- Keep OMERO credentials and group context in mounted config files or secret-managed environment material.
+- Prefer commands that emit files (`--output` for query commands, exported data for pull commands).
+- Pass image IDs and selection state between processes via TSV artifacts.
+- Keep process logic server-agnostic by externalizing endpoint-specific settings to config files.
+
+---
+
+### FAIR metadata and standards alignment
+
+OMERO-Bifrost supports FAIR-oriented workflows by combining stable operational interfaces with established microscopy standards:
+
+- **REMBI / MIFA guidance**: structure metadata capture and annotation so datasets remain understandable and reusable across projects.
+- **OME data model**: use OME semantics as a canonical conceptual backbone for microscopy metadata.
+- **Bio-Formats interoperability**: support ingestion/export pathways compatible with broadly used microscopy formats.
+- **OME-TIFF exchange**: provide a portable representation for downstream analysis, sharing, and archival use cases.
+
+Operationally, this means query/push/pull workflows should preserve provenance-relevant fields and generate machine-readable intermediate artifacts for reproducible downstream processing.
+
+---
+
+### Documentation
+
+- [Architecture and constellation model](docs/architecture.md)
+- [Nextflow / nf-core integration guide](docs/nextflow-nfcore.md)
+- [FAIR metadata and standards mapping](docs/fair-metadata.md)
 
 ---
 
