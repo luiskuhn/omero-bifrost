@@ -202,6 +202,149 @@ When wrapping OMERO-Bifrost commands in reusable modules:
 - [ ] Intermediate artifacts persisted as files.
 - [ ] Command invocations deterministic for the same inputs.
 
+### End-to-end ETL example (REMBI/MIFA-aligned metadata, Nextflow abstraction layer)
+
+Instead of adding a monolithic CLI ETL command, implement ETL at the workflow layer by composing existing `query`, `push`, and `pull` operations.
+
+#### Metadata input table (TSV)
+
+Use one row per image file (comparable to OMERO metadata registration sheets used in ETL pipelines):
+
+- `filename` (required): must match the basename of the image file to import.
+- `dataset_id` (optional): OMERO dataset ID. If omitted, use a workflow/global `params.dataset_id`.
+- `kv_pairs` (optional): semicolon-separated `key:value` entries (must use `:` because `omero-bifrost push key-value --kv-pair` expects `key:value`).
+- `tags` (optional): semicolon-separated OMERO tags.
+
+Example:
+
+```tsv
+filename	dataset_id	kv_pairs	tags
+img_001.ome.tiff	12345	SpecimenID:SP-001;REMBI.BiologicalEntity:cell_culture;MIFA.ImagingModality:confocal	REMBI_minimal;MIFA_qc_pass
+img_002.ome.tiff	12345	SpecimenID:SP-002;REMBI.BiologicalEntity:tissue;MIFA.ImagingModality:widefield	REMBI_minimal;MIFA_qc_review
+```
+
+### Nextflow example for folder import + annotation (nf-core style)
+
+The example below follows nf-core conventions:
+- DSL2
+- `tuple val(meta), path(...)` channel contracts
+- one tool responsibility per process
+- explicit container per process (fictional personal DockerHub image)
+- `versions.yml` output for provenance
+
+```nextflow
+nextflow.enable.dsl = 2
+
+params.input_dir      = "${baseDir}/incoming_images"
+params.metadata_tsv   = "${baseDir}/metadata/rembi_mifa.tsv"
+params.dataset_id     = "12345"
+params.config_file    = "${baseDir}/imaging_config.properties"
+params.server_profile = "OmeroServerSection"
+params.container      = "docker.io/mydockerhubuser/omero-bifrost:latest"
+
+process OMERO_BIFROST_IMPORT {
+    tag "${meta.id}"
+    container "${params.container}"
+
+    input:
+    tuple val(meta), path(image_file), path(metadata_tsv)
+
+    output:
+    tuple val(meta), path("imported_image.tsv"), emit: imported
+    path "versions.yml", emit: versions
+
+    script:
+    """
+    DATASET_ID=\$(awk -F '\\t' -v fn="\$(basename ${image_file})" '
+      NR==1{
+        for(i=1;i<=NF;i++){ if(\$i=="filename") f=i; if(\$i=="dataset_id") d=i }
+      }
+      NR>1 && \$f==fn { if (d>0 && length(\$d)>0) print \$d; exit }' ${metadata_tsv})
+    DATASET_ID=\${DATASET_ID:-${params.dataset_id}}
+
+    omero-bifrost push img-file \\
+      ${image_file} \\
+      \${DATASET_ID} \\
+      --config ${params.config_file} \\
+      --server-profile ${params.server_profile} \\
+      --to-xml > import.xml
+
+    python ${projectDir}/bin/extract_imported_image_id.py import.xml ${image_file} imported_image.tsv
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+      python: \$(python --version | sed 's/Python //g')
+    END_VERSIONS
+    """
+}
+
+process OMERO_BIFROST_ANNOTATE {
+    tag "${meta.id}"
+    container "${params.container}"
+
+    input:
+    tuple val(meta), path(imported_tsv), path(metadata_tsv)
+
+    output:
+    tuple val(meta), path("annotation_done.tsv"), emit: annotated
+    path "versions.yml", emit: versions
+
+    script:
+    """
+    python ${projectDir}/bin/annotate_imported_image.py \\
+      ${imported_tsv} ${metadata_tsv} \\
+      ${params.config_file} ${params.server_profile} annotation_done.tsv
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+      python: \$(python --version | sed 's/Python //g')
+    END_VERSIONS
+    """
+}
+
+process OMERO_BIFROST_QUERY_QC {
+    tag "${meta.id}"
+    container "${params.container}"
+
+    input:
+    tuple val(meta), path(annotation_tsv)
+
+    output:
+    tuple val(meta), path("qc_query.tsv"), emit: qc
+    path "versions.yml", emit: versions
+
+    script:
+    """
+    omero-bifrost query img-ids \\
+      --tag REMBI_minimal \\
+      --output qc_query.tsv \\
+      --config ${params.config_file} \\
+      --server-profile ${params.server_profile}
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+      omero_bifrost: "cli"
+    END_VERSIONS
+    """
+}
+
+workflow {
+    Channel
+        .fromPath("${params.input_dir}/*", type: 'file')
+        .map { file -> tuple([id: file.baseName], file, file(params.metadata_tsv)) }
+        .set { ch_images_meta }
+
+    ch_imported = OMERO_BIFROST_IMPORT(ch_images_meta).imported
+    ch_metadata = Channel.value(file(params.metadata_tsv))
+    ch_imported_with_meta = ch_imported
+        .combine(ch_metadata)
+        .map { rec, metadata -> tuple(rec[0], rec[1], metadata) }
+
+    ch_annotated = OMERO_BIFROST_ANNOTATE(ch_imported_with_meta).annotated
+    OMERO_BIFROST_QUERY_QC(ch_annotated)
+}
+```
+
+This abstraction-layer pattern mirrors the intent of OMERO registration scripts (upload → receive ID → enrich with metadata), while preserving reproducibility through explicit per-step artifacts and containerized runtime.
+For a full nf-core pipeline, prefer moving helper scripts into tested module wrappers under `modules/local/`.
+
 ---
 
 ## FAIR metadata and standards mapping

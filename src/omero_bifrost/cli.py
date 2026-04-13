@@ -22,6 +22,7 @@ import typer
 from rich import print
 from typing_extensions import Annotated
 from typing import List
+import csv
 
 #####################################
 
@@ -350,6 +351,7 @@ def push_file_atch(
         _handle_cli_error(exc)
 
     print("[bold blue]File Annotation ID: " + str(img_ann_id))
+
 
 @pull_app.command("ome-tiffs", help="Export OME-TIFF image files from a list of OMERO image IDs")
 def pull_ome_tiff_files(
