@@ -50,9 +50,25 @@ def _handle_cli_error(exc: Exception, *, code: int = 2):
     raise typer.Exit(code=code)
 
 
+CONFIG_HELP_TEXT = (
+    "Path to OMERO config properties file. Used together with --server-profile to select credentials."
+)
+SERVER_PROFILE_HELP_TEXT = (
+    "Config section/profile name to load from --config (default: OmeroServerSection legacy profile)."
+)
+
+
+def _load_omero_config(config_file_path: str, server_profile: str):
+    try:
+        return get_omero_config(config_file_path, server_profile=server_profile)
+    except ValueError as exc:
+        _handle_cli_error(exc)
+
+
 @query_app.command("list-all", help="Query all accessible OMERO objects")
 def query_list_all(
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
@@ -60,7 +76,7 @@ def query_list_all(
 
     import xml.etree.ElementTree as ET
     
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     if to_file:
@@ -80,7 +96,8 @@ def query_list_all(
 def query_dataset_id(
         project: Annotated[str, typer.Argument(help="The project name to be looked for (assumes it is a unique ID)")],
         dataset: Annotated[str, typer.Argument(help="The dataset name to be looked for (assumes it is a unique ID)")],
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
@@ -88,7 +105,7 @@ def query_dataset_id(
     
     import xml.etree.ElementTree as ET
     
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     ds_id = get_omero_dataset_id(conn, project, dataset)
@@ -115,7 +132,8 @@ def query_image_ids(
         p_name: Annotated[List[str], typer.Option(default=..., help="Project names to restrict query scope (assumes names are unique IDs), in format '--p-name name1 --p-name name2'")] = [],
         kv_pair: Annotated[List[str], typer.Option(default=..., help="Pairs of key-values for query, in format '--kv-pair key1:value1 --kv-pair key2:value2'")] = [],
         tag: Annotated[List[str], typer.Option(default=..., help="Tag values for query, in format '--tag value1 --tag value2'")] = [],
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output TSV file")] = "./omero_bifrost_output.tsv",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
@@ -137,7 +155,7 @@ def query_image_ids(
 
     tag_list = tag
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     if len(project_name_list) > 0:
@@ -179,7 +197,8 @@ def query_image_ids(
 def push_image_file(
         file_path: Annotated[str, typer.Argument(help="Path to the input image file")],
         dataset_id: Annotated[str, typer.Argument(help="ID of target dataset")],
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
@@ -187,7 +206,7 @@ def push_image_file(
 
     import xml.etree.ElementTree as ET
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     try:
         img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
@@ -217,7 +236,8 @@ def push_image_file(
 def push_image_folder(
         folder_path: Annotated[str, typer.Argument(help="Path to the input folder containing image files (depth=1)")],
         dataset_id: Annotated[str, typer.Argument(help="ID of target dataset")],
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
@@ -225,7 +245,7 @@ def push_image_folder(
 
     import xml.etree.ElementTree as ET
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     try:
         img_ids = register_image_folder_with_dataset_id(folder_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
@@ -255,13 +275,14 @@ def push_image_folder(
 def push_key_value(
         image_id: Annotated[str, typer.Argument(help="ID of target image")],
         kv_pair: Annotated[List[str], typer.Option(default=..., help="Pairs of key-values, in format '--kv-pair key1:value1 --kv-pair key2:value2'")],
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
     
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     #string format: key1:value1//key2:value2//key3:value3//...
@@ -281,13 +302,14 @@ def push_image_tag(
         image_id: Annotated[str, typer.Argument(help="ID of target image")],
         tag_value: Annotated[str, typer.Argument(help="Text value of OMERO tag")],
         tag_desc: Annotated[str, typer.Option("--desc", "-d", help="Tag description used when creating new tag")] = "",
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
     tags = conn.getObjects("TagAnnotation", attributes={"textValue": tag_value})
@@ -313,13 +335,14 @@ def push_image_tag(
 def push_file_atch(
         file_path: Annotated[str, typer.Argument(help="Path to the attachment file")],
         image_id: Annotated[str, typer.Argument(help="ID of target image")],
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
         to_file: Annotated[bool, typer.Option(help="output to XML file")] = False,
         to_xml: Annotated[bool, typer.Option(help="Print XML ouput to system console")] = False
         ):
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     try:
         img_ann_id = attach_file_to_image(file_path, image_id, omero_username, omero_password, omero_host, str(omero_port), omero_group)
@@ -333,7 +356,8 @@ def pull_ome_tiff_files(
         output_path: Annotated[str, typer.Argument(help="Output path, destination of pulled files")],
         img_id: Annotated[List[str], typer.Option(default=..., help="List of image IDs, in format '--img-id id1 --img-id id2'")] = [],
         id_list_path: Annotated[str, typer.Option("--list", "-l", help="Path to a TSV file with image IDs, takes priority if not empty")] = "",
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties"
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         ):
 
     import os
@@ -346,7 +370,7 @@ def pull_ome_tiff_files(
 
     print("[bold green]Processing image ID list: " + str(img_id_list))
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
@@ -374,7 +398,8 @@ def pull_original_image_files(
         output_path: Annotated[str, typer.Argument(help="Output path, destination of pulled files")],
         img_id: Annotated[List[str], typer.Option(default=..., help="List of image IDs, in format '--img-id id1 --img-id id2'")] = [],
         id_list_path: Annotated[str, typer.Option("--list", "-l", help="Path to a TSV file with image IDs, takes priority if not empty")] = "",
-        config_file_path: Annotated[str, typer.Option("--config", "-c", help="Path to the OMERO config file")] = "./imaging_config.properties"
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         ):
 
     import os
@@ -387,7 +412,7 @@ def pull_original_image_files(
 
     print("[bold green]Processing image ID list: " + str(img_id_list))
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = get_omero_config(config_file_path)
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 

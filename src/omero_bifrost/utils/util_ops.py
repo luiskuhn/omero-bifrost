@@ -1,5 +1,5 @@
 
-def get_omero_config(config_file_path, profile=None):
+def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
 
     import configparser
 
