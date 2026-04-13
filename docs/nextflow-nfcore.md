@@ -10,7 +10,7 @@ This aligns naturally with Nextflow and nf-core design principles around modular
 
 Store endpoint-specific details in configuration files and keep workflow logic generic.
 
-Typical properties file:
+Typical single-server properties file:
 
 ```ini
 [OmeroServerSection]
@@ -21,11 +21,37 @@ omero.port = 4064
 omero.group = my-lab-group
 ```
 
+Profile-oriented properties file pattern:
+
+```ini
+[OmeroServerSection.eu]
+omero.username = eu_user
+omero.password = eu_password
+omero.host = eu.omero.example.org
+omero.port = 4064
+omero.group = eu-imaging
+
+[OmeroServerSection.us]
+omero.username = us_user
+omero.password = us_password
+omero.host = us.omero.example.org
+omero.port = 4064
+omero.group = us-screening
+
+[OmeroServerSection.archive]
+omero.username = archive_user
+omero.password = archive_password
+omero.host = archive.omero.example.org
+omero.port = 4064
+omero.group = archive-readonly
+```
+
 Recommended practices:
 
 - mount config files at runtime rather than hard-coding credentials,
 - use secret managers or secured runtime environments for sensitive values,
 - avoid embedding server-specific assumptions in process scripts.
+- if using profile wrappers, select one profile (for example `--server-profile eu`) and materialize it as `OmeroServerSection` for the invoked command.
 
 ## Process composition pattern
 

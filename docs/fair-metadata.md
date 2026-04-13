@@ -38,3 +38,13 @@ To improve findability, accessibility, interoperability, and reusability in pipe
 ## Implementation principle
 
 OMERO-Bifrost does not replace domain standards; it operationalizes them by providing stable workflow-facing commands that can be embedded in reproducible process graphs.
+
+## References
+
+- FAIR principles: https://doi.org/10.1038/sdata.2016.18
+- REMBI: https://doi.org/10.1038/s41592-021-01166-8
+- MIFA: https://www.nature.com/articles/s41592-025-02663-5
+- OME data model: https://doi.org/10.1186/gb-2005-6-5-r47
+- OMERO platform: https://doi.org/10.1038/nmeth.1896
+- Bio-Formats: https://doi.org/10.1083/jcb.201004104
+- OME-TIFF: https://docs.openmicroscopy.org/ome-model/latest/ome-tiff/
