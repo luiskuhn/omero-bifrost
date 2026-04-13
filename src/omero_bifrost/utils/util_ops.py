@@ -33,10 +33,25 @@ def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
 
     # 1) Explicit named section: [OmeroServer:<profile>]
     selected_section = None
-    if profile is not None:
-        profile_section = profile_section_prefix + str(profile)
-        if config.has_section(profile_section):
-            selected_section = profile_section
+    if server_profile is not None:
+        requested_profile = str(server_profile).strip()
+        if requested_profile == legacy_section:
+            if config.has_section(legacy_section):
+                selected_section = legacy_section
+        else:
+            profile_section = profile_section_prefix + requested_profile
+            if config.has_section(profile_section):
+                selected_section = profile_section
+            elif config.has_section(requested_profile):
+                selected_section = requested_profile
+            else:
+                available_profiles = sorted(set([legacy_section] + config.sections() + _existing_prefixed_profiles()))
+                available_profile_text = ", ".join(available_profiles) if available_profiles else "none"
+                raise ValueError(
+                    "Unknown OMERO server profile '{0}'. Available profiles: {1}.".format(
+                        requested_profile, available_profile_text
+                    )
+                )
     else:
         legacy_present = config.has_section(legacy_section)
         discovered_profiles = _existing_profile_sections()
@@ -65,8 +80,8 @@ def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
         # 2) Default/legacy section using profile-prefixed keys, e.g.:
         #    eu.omero.username, us.omero.host, ...
         key_prefix = ""
-        if profile is not None:
-            key_prefix = str(profile).strip() + "."
+        if server_profile is not None:
+            key_prefix = str(server_profile).strip() + "."
 
         def _lookup_prefixed_option(option_name):
             if config.has_section(legacy_section) and config.has_option(legacy_section, option_name):
@@ -89,7 +104,7 @@ def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
             selected_values[optional_group_key] = group_value
 
     if missing_required:
-        if profile is None:
+        if server_profile is None:
             raise ValueError(
                 "Missing required OMERO config keys: {0}. "
                 "Use [OmeroServerSection], a single [OmeroServer:<profile>] section, "
@@ -100,7 +115,7 @@ def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
         available_profile_text = ", ".join(available_profiles) if available_profiles else "none"
         raise ValueError(
             "Profile '{0}' is missing required OMERO keys: {1}. "
-            "Available profiles: {2}.".format(profile, ", ".join(missing_required), available_profile_text)
+            "Available profiles: {2}.".format(server_profile, ", ".join(missing_required), available_profile_text)
         )
 
     omero_username = selected_values['omero.username']
@@ -109,7 +124,7 @@ def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
     try:
         omero_port = int(selected_values['omero.port'])
     except (TypeError, ValueError):
-        profile_label = "default" if profile is None else str(profile)
+        profile_label = "default" if server_profile is None else str(server_profile)
         raise ValueError("Invalid OMERO port for profile '{0}': {1}".format(profile_label, selected_values['omero.port']))
 
     # optional user group context (kept backward compatible)
