@@ -39,7 +39,9 @@ Current command groups:
 
 ### Configuration
 
-`omero-bifrost` reads credentials from a properties file (default: `./imaging_config.properties`):
+`omero-bifrost` reads credentials from a properties file (default: `./imaging_config.properties`).
+
+Minimal single-server format:
 
 ```ini
 [OmeroServerSection]
@@ -51,9 +53,56 @@ omero.port = 4064
 omero.group = my-lab-group
 ```
 
+Multi-server format (recommended for constellation-style deployments):
+
+```ini
+[OmeroServerSection.eu]
+omero.username = eu_user
+omero.password = eu_password
+omero.host = eu.omero.example.org
+omero.port = 4064
+omero.group = eu-imaging
+
+[OmeroServerSection.us]
+omero.username = us_user
+omero.password = us_password
+omero.host = us.omero.example.org
+omero.port = 4064
+omero.group = us-screening
+
+[OmeroServerSection.archive]
+omero.username = archive_user
+omero.password = archive_password
+omero.host = archive.omero.example.org
+omero.port = 4064
+omero.group = archive-readonly
+```
+
 Notes:
 - `omero.group` is optional for backward compatibility.
 - When provided, it is propagated to both BlitzGateway connections and CLI-backed commands.
+- The current built-in parser consumes `OmeroServerSection` directly; profile-specific sections are typically selected in workflow wrappers that materialize the active profile as `OmeroServerSection` at runtime.
+
+#### Profile-oriented usage examples
+
+In pipeline wrappers (e.g., Nextflow module entrypoints), a `--server-profile` flag is commonly used to pick `eu`, `us`, or `archive` before invoking `omero-bifrost`.
+
+```bash
+# Query on EU server profile
+omero-bifrost --server-profile eu query img-ids \
+  --p-name StudyA --tag qc_pass \
+  --output eu_ids.tsv --to-file
+
+# Push to US server profile
+omero-bifrost --server-profile us push img-file \
+  ./incoming/plate01_A01.ome.tiff 12345 --to-xml
+
+# Pull from ARCHIVE server profile
+omero-bifrost --server-profile archive pull ome-tiff \
+  998877 --output ./exports/archive_img_998877.ome.tiff
+```
+
+If you run the CLI directly without a wrapper, use `--config` with a concrete single active section file per invocation.
 
 ---
 
@@ -87,6 +136,26 @@ Operationally, this means query/push/pull workflows should preserve provenance-r
 - [Architecture and constellation model](docs/architecture.md)
 - [Nextflow / nf-core integration guide](docs/nextflow-nfcore.md)
 - [FAIR metadata and standards mapping](docs/fair-metadata.md)
+
+---
+
+### Scientific references
+
+- **FAIR principles**: Wilkinson MD *et al.* “The FAIR Guiding Principles for scientific data management and stewardship.” *Scientific Data* (2016). https://doi.org/10.1038/sdata.2016.18
+- **REMBI**: Sarkans U *et al.* “REMBI: Recommended Metadata for Biological Images.” *Nature Methods* (2021). https://doi.org/10.1038/s41592-021-01166-8
+- **MIFA**: MIFA consortium paper (community framework for microscopy metadata in AI and machine-actionable workflows). *Nature Methods* (2025). https://www.nature.com/articles/s41592-025-02663-5
+- **OME data model**: Goldberg IG *et al.* “The Open Microscopy Environment (OME) Data Model and XML File: open tools for informatics and quantitative analysis in biological imaging.” *Genome Biology* (2005). https://doi.org/10.1186/gb-2005-6-5-r47
+- **OMERO platform**: Allan C *et al.* “OMERO: flexible, model-driven data management for experimental biology.” *Nature Methods* (2012). https://doi.org/10.1038/nmeth.1896
+- **Bio-Formats**: Linkert M *et al.* “Metadata matters: access to image data in the real world.” *Journal of Cell Biology* (2010). https://doi.org/10.1083/jcb.201004104
+- **OME-TIFF**: OME Consortium specification page. https://docs.openmicroscopy.org/ome-model/latest/ome-tiff/
+
+### Tooling and API documentation
+
+- **omero-py** (Python bindings): https://omero.readthedocs.io/en/stable/developers/Python.html
+- **OMERO CLI documentation**: https://omero.readthedocs.io/en/stable/users/cli/index.html
+- **OMERO API documentation (developer index)**: https://omero.readthedocs.io/en/stable/developers/
+- **ezomero** (high-level OMERO Python helpers): https://thejacksonlaboratory.github.io/ezomero/
+- **Bio-Formats developer/user docs**: https://bio-formats.readthedocs.io/
 
 ---
 
