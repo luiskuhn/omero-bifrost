@@ -1,20 +1,29 @@
 
-def get_omero_config(config_file_path):
+def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
 
     import configparser
 
     config = configparser.RawConfigParser()
     config.read(config_file_path)
 
-    omero_username = config.get('OmeroServerSection', 'omero.username')
-    omero_password = config.get('OmeroServerSection', 'omero.password')
-    omero_host = config.get('OmeroServerSection', 'omero.host')
-    omero_port = int(config.get('OmeroServerSection', 'omero.port'))
+    profile = server_profile.strip() if isinstance(server_profile, str) else "OmeroServerSection"
+    if profile == "":
+        profile = "OmeroServerSection"
+
+    if not config.has_section(profile):
+        raise ValueError(
+            "Unknown OMERO server profile '" + str(profile) + "' in config file '" + str(config_file_path) + "'."
+        )
+
+    omero_username = config.get(profile, 'omero.username')
+    omero_password = config.get(profile, 'omero.password')
+    omero_host = config.get(profile, 'omero.host')
+    omero_port = int(config.get(profile, 'omero.port'))
 
     # optional user group context (kept backward compatible)
     omero_group = None
-    if config.has_option('OmeroServerSection', 'omero.group'):
-        group_value = config.get('OmeroServerSection', 'omero.group').strip()
+    if config.has_option(profile, 'omero.group'):
+        group_value = config.get(profile, 'omero.group').strip()
         if group_value != "":
             omero_group = group_value
 
@@ -103,4 +112,3 @@ def img_map_from_tsv(tsv_file_path):
 
 
     return img_map
-
