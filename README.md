@@ -12,13 +12,13 @@ From a scientific data-management perspective, OMERO-Bifrost is designed to oper
 
 ## Requirements
 
-- Python `3.8`
-- typer `0.9.0`
-- rich `13.5.2`
+- Python `3.10+`
+- typer `0.24.1`
+- rich `15.0.0`
 - zeroc-ice `3.6.5`
-- omero-py `5.13.1` (downgraded from `5.15.0` given ezomero `2.1.0` requirements)
+- omero-py `5.22.1`
 - omero-upload `0.4.0`
-- ezomero `2.1.0`
+- ezomero `3.2.3`
 
 ## Install with PyPI
 
