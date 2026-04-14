@@ -112,18 +112,28 @@ def add_tag_to_image(image_id, tag_id, usr, pwd, host, port=4064, group=None):
 
 
 def add_kv_to_image(conn, image_id, key_value_data):
-    import omero
+    import ezomero
 
-    map_ann = omero.gateway.MapAnnotationWrapper(conn)
-    namespace = omero.constants.metadata.NSCLIENTMAPANNOTATION
-    map_ann.setNs(namespace)
-    map_ann.setValue(key_value_data)
-    map_ann.save()
+    namespace = "openmicroscopy.org/omero/client/mapAnnotation"
+    kv_dict = {}
+    for item in key_value_data:
+        if len(item) != 2:
+            raise ValueError("Invalid key/value pair. Expected format 'key:value'.")
+        kv_dict[str(item[0])] = str(item[1])
 
-    image = conn.getObject("Image", image_id)
-    image.linkAnnotation(map_ann)
+    map_ann_id = ezomero.post_map_annotation(
+        conn,
+        "Image",
+        int(image_id),
+        kv_dict,
+        ns=namespace,
+        across_groups=True,
+    )
 
-    return 0
+    if map_ann_id is None:
+        raise ValueError("Failed to create map annotation for image.")
+
+    return map_ann_id
 
 
 ########################################

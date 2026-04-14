@@ -1,8 +1,10 @@
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from omero_bifrost.pull.pull_ops import export_ome_tiff_file
 from omero_bifrost.push.push_ops import (
+    add_kv_to_image,
     attach_file_to_image,
     register_image_file_with_dataset_id,
     register_image_folder_with_dataset_id,
@@ -59,6 +61,23 @@ class TestPushPullOps(unittest.TestCase):
         self.assertEqual(result.stdout, "done")
         passed_cmd = mock_run.call_args.args[0]
         self.assertIn("/tmp/out.ome.tiff", passed_cmd)
+
+    def test_add_kv_to_image_uses_ezomero(self):
+        mock_post_map = unittest.mock.Mock(return_value=777)
+        fake_ezomero = SimpleNamespace(post_map_annotation=mock_post_map)
+
+        with patch.dict("sys.modules", {"ezomero": fake_ezomero}):
+            result = add_kv_to_image(object(), 42, [["k1", "v1"], ["k2", "v2"]])
+
+        self.assertEqual(result, 777)
+        mock_post_map.assert_called_once_with(
+            unittest.mock.ANY,
+            "Image",
+            42,
+            {"k1": "v1", "k2": "v2"},
+            ns="openmicroscopy.org/omero/client/mapAnnotation",
+            across_groups=True,
+        )
 
 
 if __name__ == "__main__":
