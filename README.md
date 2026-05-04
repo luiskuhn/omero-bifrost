@@ -42,47 +42,48 @@ Current command groups:
 ### Single-server configuration
 
 ```ini
-[OmeroServerSection]
+[OmeroServer:default]
 omero.username = my_user
 omero.password = my_password
 omero.host = omero.example.org
 omero.port = 4064
-# Optional group context (group name or numeric id)
 omero.group = my-lab-group
 ```
 
 ### Multi-server configuration (constellation deployments)
 
+OMERO-Bifrost uses a **single supported profile format**:
+
+- **OMERO server profile format (required)**: `[OmeroServer:<profile>]`
+
 ```ini
-[OmeroServerSection.eu]
+[OmeroServer:eu]
 omero.username = eu_user
 omero.password = eu_password
 omero.host = eu.omero.example.org
 omero.port = 4064
 omero.group = eu-imaging
 
-[OmeroServerSection.us]
+[OmeroServer:us]
 omero.username = us_user
 omero.password = us_password
 omero.host = us.omero.example.org
 omero.port = 4064
 omero.group = us-screening
-
-[OmeroServerSection.archive]
-omero.username = archive_user
-omero.password = archive_password
-omero.host = archive.omero.example.org
-omero.port = 4064
-omero.group = archive-readonly
 ```
 
-### Multi-server notes and recommended pattern
+### Multi-server notes and deterministic behavior
 
-- `omero.group` is optional for backward compatibility.
-- When provided, it is propagated to both BlitzGateway connections and CLI-backed commands.
-- The built-in parser consumes `OmeroServerSection` directly.
-- In multi-profile workflows, wrappers typically select one profile (`eu`, `us`, `archive`) and materialize it at runtime as `OmeroServerSection` for the specific command invocation.
-- Keep credentials endpoint-specific and externalized from pipeline code.
+- Required keys per OMERO server profile: `omero.username`, `omero.password`, `omero.host`, `omero.port`, `omero.group`.
+- `omero.group` is mandatory in every OMERO server profile.
+- `omero.port` must parse as an integer; invalid values fail early.
+- Unknown OMERO server profiles and missing keys fail with actionable errors.
+
+### Group scope behavior
+
+`omero.group` is required for every OMERO server profile. During connection, OMERO-Bifrost resolves that group and stores the effective group context in `bifrost_group_context`.
+
+If the configured group cannot be accessed or resolved by name/ID, OMERO-Bifrost raises `OmeroGroupResolutionError` and fails immediately to prevent scope drift.
 
 ### Profile-oriented usage examples
 
@@ -156,6 +157,108 @@ Contract details:
 This behavior is intended for workflow engines (Nextflow/nf-core) so failures are explicit, parseable, and never represented as ambiguous empty strings/lists.
 
 ---
+
+
+## Federation runner (multi-profile orchestration core)
+
+The package includes a federation execution core at `omero_bifrost.federation.runner` for orchestrating query/push/pull style operations across many profiles with deterministic output ordering.
+
+Capabilities:
+- repeatable profile sets (sorted, de-duplicated)
+- bounded concurrency (`max_workers`)
+- execution timeout (`timeout_seconds`)
+- retry with exponential backoff (`retries`, `backoff_seconds`)
+- fail policy: `fail-fast` or `continue`
+- per-profile summaries + merged record stream
+
+Canonical machine-readable records are represented by `FederationRecord` and can be serialized to JSONL via `omero_bifrost.utils.output_ops.records_to_jsonl`.
+
+```python
+from omero_bifrost.federation import FederationRunner, FederationRecord
+from omero_bifrost.utils.output_ops import records_to_jsonl
+
+runner = FederationRunner(max_workers=4, timeout_seconds=300, fail_policy="continue", retries=1)
+
+def run_profile(profile: str):
+    # replace with real query/push/pull integration
+    return [FederationRecord(server_profile=profile, server_host="example", operation="query", status="ok")]
+
+out = runner.run(["eu", "us"], "query", run_profile)
+jsonl = records_to_jsonl(out["records"])
+```
+
+Determinism guarantee: merged records are sorted canonically, so output ordering is stable across repeated concurrent runs.
+
+## Federated abstraction layer
+
+OMERO-Bifrost provides a federated abstraction layer for running the same data operation across multiple OMERO server profiles while preserving per-server result visibility.
+
+### Federated query behavior
+
+- A query command can target **all** selected OMERO server profiles or an explicit subset.
+- The same query logic is executed per profile/server node.
+- Results are returned per server profile and merged deterministically as machine-readable records.
+
+### Federated push behavior
+
+- Push commands can target a selected set of OMERO server profiles for each operation (image import, folder import, file attachment).
+- Each push action runs against a profile-local valid target (for example, dataset/image IDs valid on that server node).
+- Results are reported per server profile, including errors per node.
+
+### Federated metadata annotation behavior
+
+- Metadata annotation commands are designed for scale: one command can annotate many targets across many OMERO server profiles.
+- Annotation runs profile-by-profile and returns per-profile status and object-level records.
+
+### Federated pull behavior
+
+- Pull commands can consume a list of pull targets where **each target explicitly declares its hosting OMERO server profile**.
+- Targets are grouped by profile, executed on their owning server node, and emitted with per-profile provenance in output records.
+
+### Programmatic interface
+
+The `omero_bifrost.federation.layer` module exposes these high-level helpers:
+
+- `federated_query(profiles, query_fn)`
+- `federated_push(profiles, push_fn)`
+- `federated_annotate(profiles, annotate_fn)`
+- `federated_pull(targets, pull_fn)` where targets use `PullTarget(server_profile, target_id, target_type)`
+
+All helpers return the same structure from the federation runner: per-profile summary plus deterministic merged records (`FederationRecord`), serializable via JSONL.
+
+
+### Technical execution model
+
+Internally, federated orchestration is callback-driven:
+
+1. A profile set (or pull target list) is normalized.
+2. One callback execution is scheduled per OMERO server profile.
+3. Each callback emits `FederationRecord` rows for object-level outcomes.
+4. Runner-level summaries are emitted per profile (`status`, `count`, and error metadata on failure).
+5. All records are merged with canonical sorting to guarantee deterministic ordering independent of completion timing.
+
+### Canonical output record schema
+
+`FederationRecord` fields used across query/push/pull/annotate:
+
+- `server_profile`: OMERO server profile name used for execution
+- `server_host`: hostname or identity label for the OMERO node
+- `operation`: `query`, `push`, `pull`, or `annotate`
+- `status`: operation status for the emitted row (`ok`, `error`, etc.)
+- `local_object_id`: source/local object identity
+- `federated_object_id`: cross-node or destination identity when applicable
+- `object_type`: object class (image, dataset, file, annotation, ...)
+- `error_type`: exception class name for failures
+- `error_message`: exception message for failures
+
+For machine-oriented pipelines, records can be serialized to JSONL using `records_to_jsonl(...)`, producing one JSON object per line.
+
+### Failure policy and retries
+
+- `fail_policy="continue"`: collect failures and continue executing other OMERO server profiles.
+- `fail_policy="fail-fast"`: stop processing as soon as one profile execution fails.
+- Per-profile retries use exponential backoff controlled by `retries` and `backoff_seconds`.
+- `timeout_seconds` bounds the overall completion wait for concurrent profile executions.
 
 ## Nextflow / nf-core integration guide
 

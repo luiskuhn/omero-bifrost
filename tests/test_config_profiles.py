@@ -13,66 +13,33 @@ class TestConfigProfiles(unittest.TestCase):
         config_path.write_text(content)
         return str(config_path)
 
-    def test_legacy_default_profile_is_used_when_not_provided(self):
-        config_path = self._write_config(
-            """
-[OmeroServerSection]
-omero.username = legacy-user
-omero.password = legacy-pass
-omero.host = legacy-host
-omero.port = 4064
-""".strip()
-        )
-
-        username, password, host, port, group = get_omero_config(config_path)
-
-        self.assertEqual(username, "legacy-user")
-        self.assertEqual(password, "legacy-pass")
-        self.assertEqual(host, "legacy-host")
-        self.assertEqual(port, 4064)
-        self.assertIsNone(group)
-
-    def test_named_server_profile_is_used_when_selected(self):
-        config_path = self._write_config(
-            """
-[OmeroServerSection]
-omero.username = legacy-user
-omero.password = legacy-pass
-omero.host = legacy-host
-omero.port = 4064
-
-[secondary]
-omero.username = prof-user
-omero.password = prof-pass
-omero.host = prof-host
-omero.port = 14064
-omero.group = lab-a
-""".strip()
-        )
-
-        username, password, host, port, group = get_omero_config(config_path, server_profile="secondary")
-
-        self.assertEqual(username, "prof-user")
-        self.assertEqual(password, "prof-pass")
-        self.assertEqual(host, "prof-host")
-        self.assertEqual(port, 14064)
-        self.assertEqual(group, "lab-a")
-
     def test_unknown_profile_raises_value_error(self):
-        config_path = self._write_config(
-            """
-[OmeroServerSection]
-omero.username = legacy-user
-omero.password = legacy-pass
-omero.host = legacy-host
-omero.port = 4064
-""".strip()
-        )
-
+        config_path = self._write_config("""[OmeroServer:eu]\nomero.username=u\nomero.password=p\nomero.host=h\nomero.port=4064\nomero.group=g""")
         with self.assertRaises(ValueError) as exc:
-            get_omero_config(config_path, server_profile="missing-profile")
-
+            get_omero_config(config_path, server_profile="missing")
         self.assertIn("Unknown OMERO server profile", str(exc.exception))
+
+    def test_missing_keys_raises(self):
+        config_path = self._write_config("""[OmeroServer:eu]\nomero.username=u\nomero.host=h\nomero.port=4064\nomero.group=g""")
+        with self.assertRaises(ValueError) as exc:
+            get_omero_config(config_path, server_profile="eu")
+        self.assertIn("missing required", str(exc.exception))
+
+    def test_group_is_required(self):
+        config_path = self._write_config("""[OmeroServer:eu]\nomero.username=u\nomero.password=p\nomero.host=h\nomero.port=4064""")
+        with self.assertRaises(ValueError) as exc:
+            get_omero_config(config_path, server_profile="eu")
+        self.assertIn("omero.group", str(exc.exception))
+
+    def test_invalid_port_raises(self):
+        config_path = self._write_config("""[OmeroServer:eu]\nomero.username=u\nomero.password=p\nomero.host=h\nomero.port=abc\nomero.group=g""")
+        with self.assertRaises(ValueError):
+            get_omero_config(config_path, server_profile="eu")
+
+    def test_section_style_profile_success(self):
+        config_path = self._write_config("""[OmeroServer:eu]\nomero.username=u\nomero.password=p\nomero.host=h\nomero.port=4064\nomero.group=lab-a""")
+        username, password, host, port, group = get_omero_config(config_path, server_profile="eu")
+        self.assertEqual((username, password, host, port, group), ("u", "p", "h", 4064, "lab-a"))
 
 
 if __name__ == "__main__":
