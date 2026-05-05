@@ -24,6 +24,9 @@ from typing_extensions import Annotated
 from typing import List
 import csv
 
+from omero_bifrost.utils.filter_expr import FilterParseError, parse_filter_exprs
+from omero_bifrost.fair.metadata_schema import validate_row
+
 #####################################
 
 from omero_bifrost.utils.util_ops import get_omero_config, format_xml_ouput, omero_connect, img_map_from_tsv
@@ -148,11 +151,10 @@ def query_image_ids(
     project_name_list = p_name
 
     #string format: key1:value1//key2:value2//key3:value3//...
-    key_value_data = []
-    kv_pair_list = kv_pair
-    for pair in kv_pair_list:
-        key_value = pair.split(":")
-        key_value_data.append(key_value)
+    try:
+        parsed_filters = parse_filter_exprs(kv_pair)
+    except FilterParseError as exc:
+        _handle_cli_error(exc)
 
     tag_list = tag
 
@@ -177,8 +179,8 @@ def query_image_ids(
 
     image_id_list = list(image_map.keys())
 
-    for kv in key_value_data:
-        image_id_list = ezomero.filter_by_kv(conn, image_id_list, key=kv[0], value=kv[1], across_groups=True)
+    for expr in parsed_filters:
+        image_id_list = ezomero.filter_by_kv(conn, image_id_list, key=expr.key, value=str(expr.value), across_groups=True)
 
     for tag in tag_list:
         image_id_list = ezomero.filter_by_tag_value(conn, image_id_list, tag_value=tag, across_groups=True)
@@ -275,7 +277,8 @@ def push_image_folder(
 @push_app.command("key-value", help="Annotate an image with key-value pairs")
 def push_key_value(
         image_id: Annotated[str, typer.Argument(help="ID of target image")],
-        kv_pair: Annotated[List[str], typer.Option(default=..., help="Pairs of key-values, in format '--kv-pair key1:value1 --kv-pair key2:value2'")],
+        kv_pair: Annotated[List[str], typer.Option(default=..., help="Key-value pairs in legacy format 'key:value'")],
+        validation_policy: Annotated[str, typer.Option("--validation-policy", help="strict or lenient")] = "strict",
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
         server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "OmeroServerSection",
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output XML file")] = "./omero_bifrost_output.xml",
@@ -286,12 +289,27 @@ def push_key_value(
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
-    #string format: key1:value1//key2:value2//key3:value3//...
+    try:
+        parsed = parse_filter_exprs(kv_pair)
+    except FilterParseError as exc:
+        conn.close()
+        _handle_cli_error(exc)
+
     key_value_data = []
-    pair_list = kv_pair
-    for pair in pair_list:
-        key_value = pair.split(":")
-        key_value_data.append(key_value)
+    warnings = []
+    for expr in parsed:
+        validations = validate_row({expr.key: expr.value})
+        invalid = [v for v in validations if v.status == "invalid"]
+        if invalid:
+            if validation_policy == "strict":
+                conn.close()
+                _handle_cli_error(ValueError(f"invalid metadata field {expr.key}: {invalid[0].reason_code}"))
+            warnings.append(f"Skipping invalid field {expr.key}: {invalid[0].reason_code}")
+            continue
+        key_value_data.append([expr.key, str(expr.value)])
+
+    for w in warnings:
+        print(f"[yellow]WARNING|{w}")
 
     add_kv_to_image(conn, image_id, key_value_data)
 
