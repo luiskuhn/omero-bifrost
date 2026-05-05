@@ -335,10 +335,43 @@ Internally, federated orchestration is callback-driven:
 - `local_object_id`: source/local object identity
 - `federated_object_id`: cross-node or destination identity when applicable
 - `object_type`: object class (image, dataset, file, annotation, ...)
-- `error_type`: exception class name for failures
+- `error_category`: normalized failure class (`auth`, `group_scope`, `validation`, `transient_network`, `server_permanent`, `unexpected`)
 - `error_message`: exception message for failures
+- `message`: canonical status message for each row
+- `provenance_id`: run-level trace identifier linking to the provenance envelope
 
 For machine-oriented pipelines, records can be serialized to JSONL using `records_to_jsonl(...)`, producing one JSON object per line.
+
+
+### Provenance envelope (mandatory per execution)
+
+Every federated `run(...)` invocation emits one `provenance` object alongside `profiles` and `records`.
+
+`ProvenanceEnvelope` fields:
+
+- `provenance_id`: UUID for the execution run
+- `timestamp_utc`: RFC3339/ISO-8601 UTC timestamp
+- `tool_version`: emitter version label
+- `command`: operation family (`query`, `push`, `pull`, `annotate`)
+- `sanitized_args`: invocation args with secret-like fields redacted
+- `effective_profile`, `effective_host`, `effective_group`: resolved execution context
+- `fail_policy`, `timeout_seconds`, `retries`, `backoff_seconds`: reliability policy snapshot
+- `input_checksums`: SHA-256 checksums for declared input artifacts (TSV/JSON/config paths passed to runner)
+
+This envelope provides end-to-end traceability and lets downstream systems validate that each result row belongs to a specific immutable run context.
+
+### Structured output artifacts
+
+Use shared output helpers in `omero_bifrost.utils.output_ops`:
+
+- `records_to_jsonl(records)`: newline-delimited JSON stream of canonical `FederationRecord` rows
+- `serialize_execution_output(result)`: single JSON document containing `provenance`, `profiles`, and `records`
+
+Recommended production contract:
+
+1. Persist one full execution JSON artifact per command invocation (`serialize_execution_output`).
+2. Optionally emit a JSONL sidecar (`records_to_jsonl`) for row-wise processing in workflow engines.
+3. Treat `provenance_id` as required join key between all per-record outputs and run-level audit metadata.
 
 ### Failure policy and retries
 

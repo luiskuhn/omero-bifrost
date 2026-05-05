@@ -49,3 +49,42 @@ Contract details:
 - CLI handlers map these controlled exceptions to deterministic terminal output using `ERROR|<ExceptionType>|<message>` and exit with non-zero status.
 
 This behavior is intended for workflow engines (Nextflow/nf-core) so failures are explicit, parseable, and never represented as ambiguous empty strings/lists.
+
+## Production hardening runbook (query/push/pull)
+
+Canonical operation modes now emit structured records for federated query, push, and pull paths. Operators should consume JSON/JSONL artifacts (not ad hoc terminal formatting) for automation.
+
+### Profile configuration requirements
+
+- Each invocation must resolve an explicit server profile from the config file.
+- Effective host/group are tracked in a provenance envelope for each run.
+- Sensitive inputs (e.g., password-like args) are sanitized in provenance metadata.
+
+### Reliability controls and failure policy
+
+Use the same controls for all federated command families:
+
+- `timeout_seconds`: global execution timeout for multi-profile operation.
+- `retries` + exponential `backoff_seconds`: transient recovery behavior.
+- `fail_policy`:
+  - `fail-fast`: stop after first profile error.
+  - `continue`: keep processing and report mixed outcomes.
+
+Failure categories are normalized in records and profile summaries:
+`auth`, `group_scope`, `validation`, `transient_network`, `server_permanent`, `unexpected`.
+
+### Expected outputs
+
+Per command invocation:
+
+1. **Provenance envelope** (single record): UTC timestamp, run UUID, tool version, sanitized args, effective profile context, input checksums, and fail-policy settings.
+2. **Result records** (N records): canonical fields include profile identity, local/federated object identity, operation, status, error category, message, and provenance linkage.
+3. **Per-profile summary**: explicit per-profile status and fail-policy visibility.
+
+### Troubleshooting by failure class
+
+- `auth`: validate credentials and secret source bindings.
+- `group_scope`: verify configured OMERO group and access rights for target objects.
+- `validation`: check input TSV/JSON metadata shape and schema alignment.
+- `transient_network`: tune timeout/retry/backoff and re-run.
+- `server_permanent` / `unexpected`: escalate with provenance ID and captured message for incident review.
