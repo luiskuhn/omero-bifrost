@@ -2,42 +2,71 @@
 
 ## Scope
 
-This document summarizes how OMERO-Bifrost is intended to support FAIR-oriented metadata handling in workflow automation contexts.
+This document defines the FAIR metadata layer used by OMERO-Bifrost for query/push workflows.
+It focuses on deterministic parsing, ontology normalization, and validation records that can be consumed by workflow engines.
 
-## Standards and formats in scope
+## REMBI + MIFA profile with OME leverage
 
-### REMBI
+The active metadata profile is intentionally constrained to fields that are:
+1. useful for REMBI/MIFA reporting,
+2. representable in OMERO annotations,
+3. alignable to OME model concepts.
 
-REMBI provides recommendations for minimum information reporting in bioimaging. In OMERO-Bifrost workflows, REMBI-aligned fields should be captured and propagated as structured metadata where possible.
+### Profile fields and OME mapping
 
-### MIFA
+| Field | Standard intent | OME concept |
+|---|---|---|
+| `REMBI_EXPERIMENT_ID` | REMBI experiment identity | `ExperimenterGroup/Project` |
+| `REMBI_ACQUISITION_DATE` | REMBI acquisition context | `Image/AcquisitionDate` |
+| `OME_IMAGE_NAME` | OME native image naming | `Image/Name` |
+| `OME_INSTRUMENT_ID` | OME native instrument identity | `Instrument/@ID` |
+| `OME_OBJECTIVE_ID` | Optical objective identity | `Instrument/Objective/@ID` |
+| `OME_PIXEL_SIZE_X_UM` | Spatial calibration | `Pixels/PhysicalSizeX` |
+| `OME_PIXEL_SIZE_Y_UM` | Spatial calibration | `Pixels/PhysicalSizeY` |
+| `OME_PIXEL_SIZE_Z_UM` | Axial calibration | `Pixels/PhysicalSizeZ` |
+| `OME_PIXEL_SIZE_T_S` | Temporal calibration | `Pixels/TimeIncrement` |
+| `OME_SIZE_X` | Image extent | `Pixels/SizeX` |
+| `OME_SIZE_Y` | Image extent | `Pixels/SizeY` |
+| `OME_SIZE_Z` | Image extent | `Pixels/SizeZ` |
+| `OME_SIZE_T` | Time extent | `Pixels/SizeT` |
+| `REMBI_BIOSAMPLE_TYPE` | Sample semantics | `Image/AnnotationRef` |
+| `REMBI_DISEASE` | Biological semantics | `Image/AnnotationRef` |
+| `REMBI_ORGANISM_PART` | Biological semantics | `Image/AnnotationRef` |
+| `MIFA_QC_STATUS` | MIFA quality status | `Image/AnnotationRef` |
+| `MIFA_CALIBRATION_DATE` | Instrument quality history | `Instrument/AnnotationRef` |
+| `MIFA_OPERATOR_ID` | Experimenter identity | `Experimenter/@ID` |
+| `MIFA_SEG_MASK_TYPE` | Segmentation mask flavor (`semantic`/`panoptic`) | `Image/AnnotationRef` |
+| `MIFA_SEG_MASK_URI` | URI/path to mask artifact (for supervised training) | `Image/ROIRef` |
+| `MIFA_SEG_MASK_LABELSCHEME` | Ontology-backed label scheme identifier | `Image/AnnotationRef` |
+| `MIFA_SEG_MASK_CLASSES` | Number of supervised classes in mask | `Image/AnnotationRef` |
 
-MIFA offers guidance for microscopy experiment annotation and quality-related metadata. OMERO-Bifrost metadata operations should preserve these annotations to improve interpretability and reuse.
+## Validation semantics
 
-### OME data model
+Validation emits per-field statuses with reason codes:
+- `unknown_term`
+- `malformed_id`
+- `unmapped_prefix`
+- `invalid_value_type`
+- `missing_required_field`
 
-The OME model acts as a canonical semantic framework for microscopy metadata. OMERO-Bifrost operations should maintain consistency with OME entities/relationships during query, ingestion, annotation, and export workflows.
+Ontology-bearing fields accept NCIT identifiers as:
+- code (e.g., `C1234`)
+- CURIE (e.g., `NCIT:C1234`)
+- URI (e.g., `http://purl.obolibrary.org/obo/NCIT_C1234`)
 
-### Bio-Formats
+All normalize to canonical CURIE output (`NCIT:C1234`) when valid.
 
-Bio-Formats interoperability supports broad microscopy format compatibility. OMERO-Bifrost workflows should prefer ingestion/export paths that remain compatible with Bio-Formats-enabled tooling in downstream analysis ecosystems.
+## Deterministic ingestion contract
 
-### OME-TIFF
+Metadata tables must include `IMAGE_DATA_PATH`.
+Optional control columns are `SAMPLE_ID`, `OMERO_TAGS`, and `ETL_TAG`.
+All other columns are treated as metadata keys.
 
-OME-TIFF provides a portable, metadata-aware exchange format for microscopy data. In OMERO-Bifrost, OME-TIFF export serves reproducible transport between acquisition, management, and analysis stages.
+Row expansion:
+- file path row → one target image
+- folder path row → sorted image targets
 
-## Practical FAIR implementation notes
-
-To improve findability, accessibility, interoperability, and reusability in pipelines:
-
-- preserve provenance-relevant metadata during push/pull operations,
-- keep machine-readable intermediate artifacts for selection and transformation steps,
-- standardize metadata field naming in workflow outputs,
-- document assumptions and transformations in pipeline/module docs.
-
-## Implementation principle
-
-OMERO-Bifrost does not replace domain standards; it operationalizes them by providing stable workflow-facing commands that can be embedded in reproducible process graphs.
+Error reporting is row-indexed for unresolved paths and conflicting metadata mappings.
 
 ## References
 
@@ -46,5 +75,10 @@ OMERO-Bifrost does not replace domain standards; it operationalizes them by prov
 - MIFA: https://www.nature.com/articles/s41592-025-02663-5
 - OME data model: https://doi.org/10.1186/gb-2005-6-5-r47
 - OMERO platform: https://doi.org/10.1038/nmeth.1896
-- Bio-Formats: https://doi.org/10.1083/jcb.201004104
-- OME-TIFF: https://docs.openmicroscopy.org/ome-model/latest/ome-tiff/
+
+
+## Ontologies currently used
+
+- **NCIT (NCI Thesaurus)** via prefix `NCIT` and base URI `http://purl.obolibrary.org/obo/NCIT_`.
+
+At present, NCIT is the only ontology prefix configured in code for normalization/validation (including optional segmentation mask label schemes).

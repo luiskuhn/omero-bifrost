@@ -108,6 +108,93 @@ If you run the CLI directly without a wrapper, use `--config` with a concrete si
 
 ---
 
+
+## FAIR metadata layer (REMBI + MIFA with OME alignment)
+
+OMERO-Bifrost includes a FAIR metadata layer aimed at machine-actionable metadata handling for workflow automation.
+
+Key behaviors:
+- filter expressions are parsed with a deterministic grammar (`key:value`, `=`, `!=`, `>`, `<`, `>=`, `<=`, `key?`, `key~[a,b]`),
+- metadata tables require `IMAGE_DATA_PATH` and deterministically expand folder rows into sorted image targets,
+- ontology fields (NCIT-style) accept code/CURIE/URI forms and normalize to canonical CURIE values,
+- row/field validation emits reason-coded statuses suitable for workflow gating and auditing.
+
+The schema is profiled for REMBI/MIFA reporting and mapped to OME concepts where possible.
+
+| Metadata field | Purpose | OME alignment |
+|---|---|---|
+| `REMBI_EXPERIMENT_ID` | Study/experiment identifier | `ExperimenterGroup/Project` |
+| `REMBI_ACQUISITION_DATE` | Acquisition timestamp | `Image/AcquisitionDate` |
+| `OME_IMAGE_NAME` | Image label | `Image/Name` |
+| `OME_INSTRUMENT_ID` | Instrument identity | `Instrument/@ID` |
+| `OME_OBJECTIVE_ID` | Objective identity | `Instrument/Objective/@ID` |
+| `OME_PIXEL_SIZE_X_UM`, `OME_PIXEL_SIZE_Y_UM`, `OME_PIXEL_SIZE_Z_UM`, `OME_PIXEL_SIZE_T_S` | 4D calibration (space/time) | `Pixels/PhysicalSizeX/Y/Z`, `Pixels/TimeIncrement` |
+| `OME_SIZE_X`, `OME_SIZE_Y`, `OME_SIZE_Z`, `OME_SIZE_T` | 4D dimensions | `Pixels/SizeX/SizeY/SizeZ/SizeT` |
+| `REMBI_BIOSAMPLE_TYPE`, `REMBI_DISEASE`, `REMBI_ORGANISM_PART` | Biological semantics (ontology normalized) | `Image/AnnotationRef` |
+| `MIFA_QC_STATUS` | QC/quality status | `Image/AnnotationRef` |
+| `MIFA_CALIBRATION_DATE` | Calibration traceability | `Instrument/AnnotationRef` |
+| `MIFA_OPERATOR_ID` | Operator identifier | `Experimenter/@ID` |
+| `MIFA_SEG_MASK_TYPE` | Segmentation mask type (`semantic`/`panoptic`) | `Image/AnnotationRef` |
+| `MIFA_SEG_MASK_URI` | Mask location for supervised training | `Image/ROIRef` |
+| `MIFA_SEG_MASK_LABELSCHEME` | Ontology label scheme for classes | `Image/AnnotationRef` |
+| `MIFA_SEG_MASK_CLASSES` | Number of target classes | `Image/AnnotationRef` |
+
+For implementation details and FAIR validation semantics see `docs/fair-metadata.md`.
+
+Ontology support currently includes **NCIT** (`NCIT:*`, `http://purl.obolibrary.org/obo/NCIT_*`).
+
+
+### Schema description and valid example values
+
+The FAIR metadata schema is implemented as a typed field specification in `src/omero_bifrost/fair/metadata_schema.py`.
+Each property declares:
+- whether it is required,
+- its value type (`string`, `integer`, `number`, `ontology`),
+- and an OME alignment path used for semantic mapping and validation reporting.
+
+Required properties currently include:
+- `REMBI_EXPERIMENT_ID`
+- `REMBI_ACQUISITION_DATE`
+- `OME_IMAGE_NAME`
+- `REMBI_BIOSAMPLE_TYPE`
+
+Validation produces per-field statuses with reason codes such as:
+`missing_required_field`, `invalid_value_type`, `unknown_term`, `malformed_id`, `unmapped_prefix`.
+
+#### Valid property value examples (all schema properties)
+
+| Property | Type | Example valid values |
+|---|---|---|
+| `REMBI_EXPERIMENT_ID` | string | `EXP-2026-001`, `StudyA_Batch3` |
+| `REMBI_ACQUISITION_DATE` | string | `2026-05-05`, `2026-05-05T12:30:00Z` |
+| `OME_IMAGE_NAME` | string | `plate01_A01_field01`, `patient42_slice7` |
+| `OME_INSTRUMENT_ID` | string | `Instrument:SP8-01`, `INST-LEICA-001` |
+| `OME_OBJECTIVE_ID` | string | `Objective:63x-oil-1.4NA`, `OBJ-20X-NA08` |
+| `OME_PIXEL_SIZE_X_UM` | number | `0.108`, `0.25` |
+| `OME_PIXEL_SIZE_Y_UM` | number | `0.108`, `0.25` |
+| `OME_PIXEL_SIZE_Z_UM` | number | `0.5`, `1.0` |
+| `OME_PIXEL_SIZE_T_S` | number | `2.0`, `0.25` |
+| `OME_SIZE_X` | integer | `512`, `2048` |
+| `OME_SIZE_Y` | integer | `512`, `2048` |
+| `OME_SIZE_Z` | integer | `1`, `64` |
+| `OME_SIZE_T` | integer | `1`, `120` |
+| `REMBI_BIOSAMPLE_TYPE` | ontology | `NCIT:C12508`, `C12508`, `http://purl.obolibrary.org/obo/NCIT_C12508` |
+| `REMBI_DISEASE` | ontology | `NCIT:C4872`, `C4872`, `http://purl.obolibrary.org/obo/NCIT_C4872` |
+| `REMBI_ORGANISM_PART` | ontology | `NCIT:C13041`, `C13041`, `http://purl.obolibrary.org/obo/NCIT_C13041` |
+| `MIFA_QC_STATUS` | string | `pass`, `review_required` |
+| `MIFA_CALIBRATION_DATE` | string | `2026-04-30`, `2026-04-30T09:00:00Z` |
+| `MIFA_OPERATOR_ID` | string | `operator_17`, `orcid:0000-0002-1825-0097` |
+| `MIFA_SEG_MASK_TYPE` | string | `semantic`, `panoptic` |
+| `MIFA_SEG_MASK_URI` | string | `s3://bucket/masks/img_001_panoptic.ome.tiff`, `file:///data/masks/img_001_semantic.tif` |
+| `MIFA_SEG_MASK_LABELSCHEME` | ontology | `NCIT:C25218`, `C25218`, `http://purl.obolibrary.org/obo/NCIT_C25218` |
+| `MIFA_SEG_MASK_CLASSES` | integer | `2`, `19` |
+
+Notes:
+- Ontology fields currently support NCIT only (`NCIT:*` / `NCIT_*` URI forms).
+- Unknown keys are accepted as generic metadata, but only schema-listed fields get typed validation + OME mapping.
+
+
+---
 ## Tool architecture and constellation model
 
 ### Purpose
