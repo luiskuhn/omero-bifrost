@@ -32,7 +32,7 @@ from omero_bifrost.utils.util_ops import get_omero_config, omero_connect, img_ma
 from omero_bifrost.query.query_ops import fetch_all_objects, get_omero_dataset_id
 from omero_bifrost.push.push_ops import register_image_file_with_dataset_id, register_image_folder_with_dataset_id 
 from omero_bifrost.push.push_ops import attach_file_to_image, create_tag, add_tag_to_image, add_kv_to_image
-from omero_bifrost.pull.pull_ops import download_original_image_file, export_ome_tiff_file
+from omero_bifrost.pull.pull_ops import download_original_image_file, export_ome_tiff_file, export_ome_xml_file
 from omero_bifrost.utils.omero_cli_runner import OmeroCliError
 from omero_bifrost.utils.output_ops import serialize_execution_output
 
@@ -368,6 +368,48 @@ def pull_ome_tiff_files(
     conn.close()
     _emit_execution_output(records, profile=server_profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path, provenance={"command": "pull ome-tiffs"})
 
+
+
+@pull_app.command("ome-xmls", help="Export OME-XML metadata files directly as .ome.xml files from a list of OMERO image IDs")
+def pull_ome_xml_files(
+        output_path: Annotated[str, typer.Argument(help="Output path, destination of pulled XML files")],
+        img_id: Annotated[List[str], typer.Option(default=..., help="List of image IDs, in format '--img-id id1 --img-id id2'")] = [],
+        id_list_path: Annotated[str, typer.Option("--list", "-l", help="Path to a TSV file with image IDs, takes priority if not empty")] = "",
+        config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
+        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        ):
+
+    import os
+
+    if id_list_path == "":
+        img_id_list = img_id
+    else:
+        img_map = img_map_from_tsv(id_list_path)
+        img_id_list = list(img_map.keys())
+
+    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
+
+    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
+
+    file_map = {}
+    for img_id in img_id_list:
+        image = conn.getObject("Image", img_id)
+        if not img_id in file_map.keys():
+                file_map[img_id] = str(image.getName()).replace(" ", "_")
+
+    records = []
+    for img_id in file_map.keys():
+        export_path = os.path.join(output_path, "omero_img_id_" + str(img_id) + "__" + file_map[img_id] + ".ome.xml")
+        try:
+            result = export_ome_xml_file(img_id, export_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        except (OmeroCliError, ValueError) as exc:
+            conn.close()
+            _handle_cli_error(exc)
+        records.append({"id": str(img_id), "output_path": export_path, "stdout": result.stdout, "stderr": result.stderr})
+
+    conn.close()
+    for record in records:
+        print(record["output_path"])
 @pull_app.command("orig-files", help="Download original image files from a list of OMERO image IDs")
 def pull_original_image_files(
         output_path: Annotated[str, typer.Argument(help="Output path, destination of pulled files")],
