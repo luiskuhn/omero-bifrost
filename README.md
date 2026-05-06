@@ -100,7 +100,7 @@ omero-bifrost --server-profile us push img-file \
   ./incoming/plate01_A01.ome.tiff 12345 --to-xml
 
 # Pull from ARCHIVE server profile
-omero-bifrost --server-profile archive pull ome-tiff \
+omero-bifrost --server-profile archive pull ome-tiffs \
   998877 --output ./exports/archive_img_998877.ome.tiff
 ```
 
@@ -114,7 +114,7 @@ If you run the CLI directly without a wrapper, use `--config` with a concrete si
 OMERO-Bifrost includes a FAIR metadata layer aimed at machine-actionable metadata handling for workflow automation.
 
 Key behaviors:
-- filter expressions are parsed with a deterministic grammar (`key:value`, `=`, `!=`, `>`, `<`, `>=`, `<=`, `key?`, `key~[a,b]`),
+- filter expressions are parsed with deterministic equality semantics using `key:value` filter expressions,
 - metadata tables require `IMAGE_DATA_PATH` and deterministically expand folder rows into sorted image targets,
 - ontology fields (NCIT-style) accept code/CURIE/URI forms and normalize to canonical CURIE values,
 - row/field validation emits reason-coded statuses suitable for workflow gating and auditing.
@@ -142,6 +142,7 @@ The schema is profiled for REMBI/MIFA reporting and mapped to OME concepts where
 For implementation details and FAIR validation semantics see `docs/fair-metadata.md`.
 
 Ontology support currently includes **NCIT** (`NCIT:*`, `http://purl.obolibrary.org/obo/NCIT_*`).
+
 
 
 ### Schema description and valid example values
@@ -397,7 +398,7 @@ Recommended practices:
 - mount config files at runtime rather than hard-coding credentials,
 - use secret managers or secured runtime environments for sensitive values,
 - avoid embedding server-specific assumptions in process scripts,
-- if using profile wrappers, select one profile (for example `--server-profile eu`) and materialize it as `OmeroServerSection` for the invoked command.
+- if using profile wrappers, select one profile (for example `--server-profile eu`) and materialize it as a concrete `[OmeroServer:<profile>]` section for the invoked command.
 
 ### Process composition pattern
 
@@ -435,7 +436,7 @@ Use one row per image file (comparable to OMERO metadata registration sheets use
 
 - `filename` (required): must match the basename of the image file to import.
 - `dataset_id` (optional): OMERO dataset ID. If omitted, use a workflow/global `params.dataset_id`.
-- `kv_pairs` (optional): semicolon-separated `key:value` entries (must use `:` because `omero-bifrost push key-value --kv-pair` expects `key:value`).
+- `kv_pairs` (optional): semicolon-separated `key:value` entries (currently mapped to equality semantics).
 - `tags` (optional): semicolon-separated OMERO tags.
 
 Example:
@@ -462,7 +463,7 @@ params.input_dir      = "${baseDir}/incoming_images"
 params.metadata_tsv   = "${baseDir}/metadata/rembi_mifa.tsv"
 params.dataset_id     = "12345"
 params.config_file    = "${baseDir}/imaging_config.properties"
-params.server_profile = "OmeroServerSection"
+params.server_profile = "default"
 params.container      = "docker.io/mydockerhubuser/omero-bifrost:latest"
 
 process OMERO_BIFROST_IMPORT {

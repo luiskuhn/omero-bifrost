@@ -15,7 +15,7 @@ class OmeroGroupResolutionError(ValueError):
     pass
 
 
-def get_omero_config(config_file_path, server_profile="OmeroServerSection"):
+def get_omero_config(config_file_path, server_profile="default"):
 
     import configparser
 
@@ -84,6 +84,11 @@ def _resolve_group_context(conn, group):
 
 
 def omero_connect(usr, pwd, host, port, group=None, strict_group_scope=True):
+    """Create OMERO connection with strict group resolution.
+
+    If ``group`` is provided and cannot be resolved by visible ID or name,
+    ``OmeroGroupResolutionError`` is raised. No lenient fallback behavior is applied.
+    """
     from omero.gateway import BlitzGateway
 
     conn = BlitzGateway(usr, pwd, host=host, port=port)
