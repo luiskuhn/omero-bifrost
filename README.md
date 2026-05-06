@@ -31,7 +31,7 @@ Type `omero-bifrost --help` to see all commands and subcommands.
 Current command groups:
 - `query`: inspect OMERO objects and metadata-filtered image IDs
 - `push`: import images and write annotations to OMERO
-- `pull`: export OME-TIFFs and download original files
+- `pull`: export OME-TIFFs, export OME-XML metadata (direct `.ome.xml` files), and download original files
 
 ---
 
@@ -102,6 +102,10 @@ omero-bifrost --server-profile us push img-file \
 # Pull from ARCHIVE server profile
 omero-bifrost --server-profile archive pull ome-tiffs \
   ./exports --img-id 998877 --output ./exports/archive_pull.json --to-file
+
+# Pull OME-XML metadata from ARCHIVE server profile
+omero-bifrost --server-profile archive pull ome-xmls \
+  ./exports --img-id 998877
 ```
 
 If you run the CLI directly without a wrapper, use `--config` with a concrete single active section file per invocation.
@@ -219,7 +223,7 @@ OMERO-Bifrost intentionally exposes a compact set of operational capabilities:
 
 - **query**: discover/filter objects and emit image identifiers.
 - **push**: import image data and write metadata/annotations.
-- **pull**: export OME-TIFF and/or retrieve original files.
+- **pull**: export OME-TIFF, export OME-XML metadata, and/or retrieve original files.
 
 These operations are intended to be composable building blocks for workflows rather than a full replacement for interactive OMERO clients.
 
@@ -301,6 +305,7 @@ OMERO-Bifrost provides a federated abstraction layer for running the same data o
 ### Federated pull behavior
 
 - Pull commands can consume a list of pull targets where **each target explicitly declares its hosting OMERO server profile**.
+- This profile-grouped orchestration is format-agnostic and therefore applies equally to OME-TIFF image export, original file download, and OME-XML metadata export.
 - Targets are grouped by profile, executed on their owning server node, and emitted with per-profile provenance in output records.
 
 ### Programmatic interface

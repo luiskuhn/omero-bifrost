@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from omero_bifrost.pull.pull_ops import export_ome_tiff_file
+from omero_bifrost.pull.pull_ops import export_ome_tiff_file, export_ome_xml_file
 from omero_bifrost.push.push_ops import (
     add_kv_to_image,
     attach_file_to_image,
@@ -61,6 +61,18 @@ class TestPushPullOps(unittest.TestCase):
         self.assertEqual(result.stdout, "done")
         passed_cmd = mock_run.call_args.args[0]
         self.assertIn("/tmp/out.ome.tiff", passed_cmd)
+
+
+    @patch("omero_bifrost.pull.pull_ops.run_omero_cli")
+    def test_export_ome_xml_adds_extension(self, mock_run):
+        mock_run.return_value = CommandResult(0, "done", "", ["omero", "export"])
+
+        result = export_ome_xml_file(5, "/tmp/out", "u", "p", "h")
+
+        self.assertEqual(result.stdout, "done")
+        passed_cmd = mock_run.call_args.args[0]
+        self.assertIn("/tmp/out.ome.xml", passed_cmd)
+        self.assertIn("OME-XML", passed_cmd)
 
     def test_add_kv_to_image_uses_ezomero(self):
         mock_post_map = unittest.mock.Mock(return_value=777)

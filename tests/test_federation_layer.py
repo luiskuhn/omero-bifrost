@@ -27,6 +27,22 @@ class TestFederatedLayer(unittest.TestCase):
         ids = sorted(r.local_object_id for r in out["records"])
         self.assertEqual(ids, ["11", "22"])
 
+    def test_federated_pull_ome_xml_targets_grouped_by_profile(self):
+        targets = [
+            PullTarget("eu", "11", "ome-xml"),
+            PullTarget("eu", "12", "ome-xml"),
+            PullTarget("us", "22", "ome-xml"),
+        ]
+
+        def pull_fn(t):
+            return [FederationRecord(server_profile=t.server_profile, server_host=t.server_profile, operation="pull", status="ok", local_object_id=t.target_id, object_type=t.target_type)]
+
+        out = federated_pull(targets, pull_fn)
+        xml_records = [r for r in out["records"] if r.object_type == "ome-xml"]
+        self.assertEqual(len(xml_records), 3)
+        self.assertEqual(sorted(r.local_object_id for r in xml_records), ["11", "12", "22"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
