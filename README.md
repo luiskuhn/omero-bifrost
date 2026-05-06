@@ -93,15 +93,15 @@ In pipeline wrappers (for example Nextflow module entrypoints), a `--server-prof
 # Query on EU server profile
 omero-bifrost --server-profile eu query img-ids \
   --p-name StudyA --tag qc_pass \
-  --output eu_ids.tsv --to-file
+  --output eu_ids.json --to-file
 
 # Push to US server profile
 omero-bifrost --server-profile us push img-file \
-  ./incoming/plate01_A01.ome.tiff 12345 --to-xml
+  ./incoming/plate01_A01.ome.tiff 12345 --to-console
 
 # Pull from ARCHIVE server profile
 omero-bifrost --server-profile archive pull ome-tiffs \
-  998877 --output ./exports/archive_img_998877.ome.tiff
+  ./exports --img-id 998877 --output ./exports/archive_pull.json --to-file
 ```
 
 If you run the CLI directly without a wrapper, use `--config` with a concrete single active section file per invocation.
@@ -491,9 +491,9 @@ process OMERO_BIFROST_IMPORT {
       \${DATASET_ID} \\
       --config ${params.config_file} \\
       --server-profile ${params.server_profile} \\
-      --to-xml > import.xml
+      --to-console > import.json
 
-    python ${projectDir}/bin/extract_imported_image_id.py import.xml ${image_file} imported_image.tsv
+    python ${projectDir}/bin/extract_imported_image_id.py import.json ${image_file} imported_image.tsv
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
       python: \$(python --version | sed 's/Python //g')
