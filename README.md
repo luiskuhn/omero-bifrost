@@ -404,7 +404,7 @@ Recommended practices:
 
 A common high-level pattern is:
 
-1. **query** selected records from OMERO and emit `ids.tsv`.
+1. **query** selected records from OMERO and emit `ids.json`.
 2. **push** data/annotations linked to selected IDs.
 3. **pull** OME-TIFF/original files for analysis or archival workflows.
 
@@ -532,14 +532,15 @@ process OMERO_BIFROST_QUERY_QC {
     tuple val(meta), path(annotation_tsv)
 
     output:
-    tuple val(meta), path("qc_query.tsv"), emit: qc
+    tuple val(meta), path("qc_query.json"), emit: qc
     path "versions.yml", emit: versions
 
     script:
     """
     omero-bifrost query img-ids \\
       --tag REMBI_minimal \\
-      --output qc_query.tsv \\
+      --output qc_query.json \\
+      --to-file \\
       --config ${params.config_file} \\
       --server-profile ${params.server_profile}
     cat <<-END_VERSIONS > versions.yml
