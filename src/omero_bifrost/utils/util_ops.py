@@ -1,17 +1,113 @@
 
-def get_omero_config(config_file_path):
+from dataclasses import dataclass
+
+
+@dataclass
+class OmeroGroupResolution:
+    requested_group: str | None
+    resolved_group_id: int | None
+    resolved_group_name: str | None
+    strict: bool
+    status: str
+
+
+class OmeroGroupResolutionError(ValueError):
+    pass
+
+
+def get_omero_config(config_file_path, server_profile="default"):
 
     import configparser
 
     config = configparser.RawConfigParser()
     config.read(config_file_path)
 
-    omero_username = config.get('OmeroServerSection', 'omero.username')
-    omero_password = config.get('OmeroServerSection', 'omero.password')
-    omero_host = config.get('OmeroServerSection', 'omero.host')
-    omero_port = int(config.get('OmeroServerSection', 'omero.port'))
+    required_keys = ('omero.username', 'omero.password', 'omero.host', 'omero.port', 'omero.group')
+    profile_section_prefix = 'OmeroServer:'
 
-    return omero_username, omero_password, omero_host, omero_port
+    def _clean(value):
+        return value.strip() if isinstance(value, str) else value
+
+    requested_profile = str(server_profile).strip()
+    section_name = profile_section_prefix + requested_profile
+
+    if not config.has_section(section_name):
+        available = sorted([s.split(':', 1)[1] for s in config.sections() if s.startswith(profile_section_prefix)])
+        raise ValueError(
+            "Unknown OMERO server profile '{0}'. Expected section '[{1}]'. Available profiles: {2}.".format(
+                requested_profile, section_name, ", ".join(available) if available else "none"
+            )
+        )
+
+    selected_values = {}
+    missing = []
+    for key in required_keys:
+        if config.has_option(section_name, key) and _clean(config.get(section_name, key)) != '':
+            selected_values[key] = _clean(config.get(section_name, key))
+        else:
+            missing.append(key)
+
+    if missing:
+        raise ValueError(
+            "Profile '{0}' is missing required OMERO keys in section '[{1}]': {2}".format(
+                requested_profile, section_name, ", ".join(missing)
+            )
+        )
+
+    try:
+        port = int(selected_values['omero.port'])
+    except Exception:
+        raise ValueError(f"Invalid OMERO port for profile '{requested_profile}': {selected_values.get('omero.port')}")
+
+    return (
+        selected_values['omero.username'],
+        selected_values['omero.password'],
+        selected_values['omero.host'],
+        port,
+        selected_values['omero.group'],
+    )
+
+
+def _resolve_group_context(conn, group):
+    if group is None:
+        return OmeroGroupResolution(None, None, None, True, 'not-requested')
+    if isinstance(group, str) and group.isdigit():
+        gid = int(group)
+        groups = list(conn.getObjects("ExperimenterGroup", attributes={"id": gid}))
+        name = groups[0].getName() if groups else None
+        return OmeroGroupResolution(str(group), gid, name, True, 'resolved-by-id' if groups else 'id-not-visible')
+    groups = list(conn.getObjects("ExperimenterGroup", attributes={"name": str(group)}))
+    if groups:
+        g = groups[0]
+        return OmeroGroupResolution(str(group), int(g.getId()), g.getName(), True, 'resolved-by-name')
+    return OmeroGroupResolution(str(group), None, None, True, 'name-not-found')
+
+
+def omero_connect(usr, pwd, host, port, group=None, strict_group_scope=True):
+    """Create OMERO connection with strict group resolution.
+
+    If ``group`` is provided and cannot be resolved by visible ID or name,
+    ``OmeroGroupResolutionError`` is raised. No lenient fallback behavior is applied.
+    """
+    from omero.gateway import BlitzGateway
+
+    conn = BlitzGateway(usr, pwd, host=host, port=port)
+    connected = conn.connect()
+    conn.setSecure(True)
+
+    if not connected:
+        print("Error: Connection not available")
+        return conn
+
+    group_ctx = _resolve_group_context(conn, group)
+    conn.bifrost_group_context = group_ctx
+    if group is not None:
+        if group_ctx.resolved_group_id is None:
+            msg = f"Unable to access OMERO group '{group}' ({group_ctx.status})"
+            raise OmeroGroupResolutionError(msg)
+        conn.SERVICE_OPTS.setOmeroGroup(group_ctx.resolved_group_id)
+
+    return conn
 
 def format_xml_ouput(output_map):
 
@@ -29,31 +125,6 @@ def format_xml_ouput(output_map):
     xml_tree = ET.ElementTree(output_root_element)
 
     return xml_tree
-
-def omero_connect(usr, pwd, host, port):
-    """
-    Connects to the OMERO Server with the provided username and password.
-
-    Args:
-        usr: The username to log into OMERO
-        pwd: a password associated with the given username
-        host: the OMERO hostname
-        port: the port at which the OMERO server can be reached
-
-    Returns:
-        Connected BlitzGateway to the OMERO Server with the provided credentials
-
-    """
-    from omero.gateway import BlitzGateway
-
-    conn = BlitzGateway(usr, pwd, host=host, port=port)
-    connected = conn.connect()
-    conn.setSecure(True)
-
-    if not connected:
-        print("Error: Connection not available")
-
-    return conn
 
 def img_map_from_tsv(tsv_file_path):
     import csv
@@ -82,4 +153,3 @@ def img_map_from_tsv(tsv_file_path):
 
 
     return img_map
-

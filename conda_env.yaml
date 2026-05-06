@@ -5,13 +5,12 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python=3.8
+  - python=3.10
   - zeroc-ice36-python=3.6.5
-  - omero-py=5.13.1
+  - omero-py=5.22.1
   - pip=23.2.1
   - pip:
-    - typer==0.9.0
-    - rich==13.5.2
+    - typer==0.24.1
+    - rich==15.0.0
     - omero-upload==0.4.0
-    - ezomero==2.1.0
-
+    - ezomero==3.2.3
