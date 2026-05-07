@@ -1,26 +1,28 @@
-name: Publish container to GHCR (Test)
+---
+name: Publish personal test container to GHCR
 
-on:
+"on":
   workflow_dispatch:
-    inputs:
-      ghcr_namespace:
-        description: "GHCR namespace (without ghcr.io/)"
-        required: true
-        default: "${{ github.repository_owner }}"
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  publish-test:
-    runs-on: ubuntu-latest
+  publish-ghcr-test:
+    name: Build and publish personal test image
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE_NAME: ghcr.io/luiskuhn/omero-bifrost
     steps:
-      - name: Checkout repository
+      - name: Check out source-code repository
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -29,20 +31,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ inputs.ghcr_namespace }}/omero-bifrost-test
-          tags: |
-            type=sha,format=short
-            type=raw,value=manual
-
-      - name: Build and publish image
+      - name: Build and push test image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:test
