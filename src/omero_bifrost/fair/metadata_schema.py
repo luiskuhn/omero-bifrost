@@ -1,3 +1,5 @@
+"""Typed FAIR metadata schema and row validation helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

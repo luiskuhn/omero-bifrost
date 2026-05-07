@@ -1,0 +1,54 @@
+name: Container and python smoke tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t omero-bifrost:smoke .
+
+      - name: Smoke test root help
+        run: docker run --rm omero-bifrost:smoke --help
+
+      - name: Smoke test subcommand help
+        run: |
+          docker run --rm omero-bifrost:smoke query --help
+          docker run --rm omero-bifrost:smoke push --help
+          docker run --rm omero-bifrost:smoke pull --help
+
+
+  python-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install zeroc-ice from Glencoe wheel
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "zeroc-ice @ https://github.com/glencoesoftware/zeroc-ice-py-linux-x86_64/releases/download/20231130/zeroc_ice-3.6.5-cp311-cp311-manylinux_2_28_x86_64.whl"
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Run pytest
+        run: python -m pytest -q

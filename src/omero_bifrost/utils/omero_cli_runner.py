@@ -1,3 +1,5 @@
+"""Subprocess execution and output parsing for OMERO CLI commands."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

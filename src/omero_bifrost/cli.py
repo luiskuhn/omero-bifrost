@@ -1,3 +1,5 @@
+"""Typer CLI entrypoints for OMERO-Bifrost query, push, and pull commands."""
+
 
 """Workflow-first interface to OMERO image and metadata operations.
 
@@ -20,11 +22,9 @@ workflow code.
 
 import typer
 from rich import print
-from typing_extensions import Annotated
-from typing import List
+from typing import Annotated, List
 
 from omero_bifrost.utils.filter_expr import FilterParseError, parse_filter_exprs
-from omero_bifrost.fair.metadata_schema import validate_row
 
 #####################################
 
@@ -248,6 +248,8 @@ def push_key_value(
     except FilterParseError as exc:
         conn.close()
         _handle_cli_error(exc)
+
+    from omero_bifrost.fair.metadata_schema import validate_row
 
     key_value_data = []
     warnings = []

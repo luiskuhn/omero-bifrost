@@ -1,3 +1,5 @@
+"""Federation execution runner and provenance modeling."""
+
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
