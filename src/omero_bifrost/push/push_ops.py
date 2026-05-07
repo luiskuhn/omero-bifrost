@@ -1,3 +1,5 @@
+"""Push operations for importing and annotating OMERO images."""
+
 from omero_bifrost.utils.util_ops import omero_connect
 from omero_bifrost.utils.omero_cli_runner import (
     parse_file_annotation_id,

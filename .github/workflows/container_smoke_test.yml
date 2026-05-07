@@ -1,0 +1,29 @@
+name: Container smoke test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t omero-bifrost:smoke .
+
+      - name: Smoke test root help
+        run: docker run --rm omero-bifrost:smoke --help
+
+      - name: Smoke test subcommand help
+        run: |
+          docker run --rm omero-bifrost:smoke query --help
+          docker run --rm omero-bifrost:smoke push --help
+          docker run --rm omero-bifrost:smoke pull --help

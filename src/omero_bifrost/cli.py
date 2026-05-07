@@ -1,3 +1,5 @@
+"""Typer CLI entrypoints for OMERO-Bifrost query, push, and pull commands."""
+
 
 """Workflow-first interface to OMERO image and metadata operations.
 
