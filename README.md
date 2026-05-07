@@ -2,11 +2,34 @@
 
 <img align="left" width="100" height="100" src="https://github.com/qbicsoftware/omero-bifrost/blob/main/docs/images/bifrost_img.png?raw=true">
 
-**OMERO-Bifrost** is a workflow-oriented abstraction layer for interoperable image and metadata operations across one or many [OMERO servers](https://omero.readthedocs.io/en/stable/). It exposes a stable Python package + CLI for deterministic **query / push / pull** operations in local, HPC, and cloud pipelines.
+**OMERO-Bifrost** is a workflow-oriented abstraction layer for interoperable image and metadata operations across one or many [OMERO servers](https://omero.readthedocs.io/en/stable/). It is built for organizations that need to manage, process, and analyze bioimage data at scale, where repositories are large, distributed, and continuously updated.
 
-From a scientific data-management perspective, OMERO-Bifrost is designed to operationalize FAIR data stewardship in day-to-day pipeline execution: metadata stays machine-actionable, provenance remains auditable, and workflow inputs/outputs are deterministic. The FAIR layer aligns bioimaging reporting practices from **REMBI** and **MIFA** with practical **OME** mappings so automated pipelines can preserve biological context, technical acquisition parameters, and quality-control annotations while remaining interoperable across institutions.
+The tool exposes a standardized OMERO remote-operation surface through a stable Python package + CLI, centered on deterministic **query / push / pull** primitives. This gives Nextflow/nf-core pipelines a consistent command contract independent of deployment topology (single-site, multi-site, HPC, or cloud), while preserving machine-readable outputs and workflow-safe, parseable error behavior.
 
-In short, OMERO-Bifrost separates workflow logic from infrastructure details. Pipelines can keep a single operational contract (query/push/pull artifacts), while deployment-specific concerns (credentials, host, OMERO group scope) are supplied through server profiles.
+Its **constellation model** treats multiple OMERO endpoints as one FAIR-federated operational space: workflow logic stays uniform, and endpoint-specific concerns (host, credentials, group scope, access policy) are injected through server profiles. This separation is key for scaling digital repository/workflow infrastructure without rewriting pipeline modules per institution or per environment.
+
+From a metadata perspective, OMERO-Bifrost operationalizes FAIR stewardship with a constrained, validation-first layer aligned to **REMBI** and **MIFA**, with pragmatic **OME** mappings and ontology normalization (currently NCIT). The result is reproducible metadata ingestion, auditable provenance, and standards-aware interoperability for both single OMERO deployments and distributed federated OMERO collections.
+
+---
+
+## Documentation
+
+The documentation set is organized for teams building large-scale OMERO-based digital infrastructure: start from federation/abstraction design, continue with FAIR metadata semantics, then implement workflow orchestration patterns for production pipelines.
+
+### Architecture
+Explains how OMERO-Bifrost supports scaling from a single OMERO server to a FAIR-federated constellation of repositories through one standardized operational API. It details the abstraction boundary (query/push/pull), profile-based endpoint resolution, deterministic execution records, and failure categorization needed for robust cross-site automation. It also covers production hardening controls (timeout/retry/fail policy) and provenance envelopes for federated operations.
+
+- [Architecture: OMERO-Bifrost as an abstraction layer](docs/architecture.md)
+
+### FAIR metadata and standards mapping
+Describes the FAIR metadata layer required to keep large OMERO repositories interoperable across institutions and workflows. It documents REMBI/MIFA intent, explicit OME-aligned mappings, ontology normalization rules (including NCIT code/CURIE/URI forms), and reason-coded validation outcomes for QC gating and audit trails. It also defines deterministic ingestion semantics so metadata handling remains reproducible in both local and federated contexts.
+
+- [FAIR metadata and standards mapping](docs/fair-metadata.md)
+
+### Nextflow / nf-core integration
+Covers how Nextflow/nf-core pipelines can consume OMERO-Bifrost as a standardized CLI control plane for repository-scale workflows. It includes runtime configuration and secret-handling strategies, module-oriented process design, artifact-driven chaining across query/push/pull stages, and a worked ETL pattern for import, annotation enrichment, and QC selection. The guide emphasizes portability and reproducibility for both single-server and federated multi-server deployments.
+
+- [Nextflow / nf-core integration guide](docs/nextflow-nfcore.md)
 
 ---
 
