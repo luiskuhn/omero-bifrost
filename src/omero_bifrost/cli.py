@@ -22,8 +22,7 @@ workflow code.
 
 import typer
 from rich import print
-from typing_extensions import Annotated
-from typing import List
+from typing import Annotated, List
 
 from omero_bifrost.utils.filter_expr import FilterParseError, parse_filter_exprs
 from omero_bifrost.fair.metadata_schema import validate_row
