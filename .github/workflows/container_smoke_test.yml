@@ -28,6 +28,14 @@ jobs:
           docker run --rm omero-bifrost:smoke push --help
           docker run --rm omero-bifrost:smoke pull --help
 
+      - name: Smoke test package/module imports in container
+        run: |
+          docker run --rm omero-bifrost:smoke python -c "import omero_bifrost"
+          docker run --rm omero-bifrost:smoke python -c "import omero_bifrost.fair"
+          docker run --rm omero-bifrost:smoke python -c "import omero_bifrost.fair.metadata_schema"
+          docker run --rm omero-bifrost:smoke python -c "import omero_bifrost.fair.metadata_table"
+          docker run --rm omero-bifrost:smoke python -c "import omero_bifrost.fair.ontology_normalization"
+
   python-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +54,14 @@ jobs:
 
       - name: Install project dependencies
         run: python -m pip install -r requirements.txt
+
+      - name: Smoke test package/module imports
+        run: |
+          python -c "import omero_bifrost"
+          python -c "import omero_bifrost.fair"
+          python -c "import omero_bifrost.fair.metadata_schema"
+          python -c "import omero_bifrost.fair.metadata_table"
+          python -c "import omero_bifrost.fair.ontology_normalization"
 
       - name: Run pytest
         run: pytest -q
