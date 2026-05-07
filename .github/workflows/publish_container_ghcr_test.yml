@@ -1,0 +1,48 @@
+name: Publish container to GHCR (Test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ghcr_namespace:
+        description: "GHCR namespace (without ghcr.io/)"
+        required: true
+        default: "${{ github.repository_owner }}"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ inputs.ghcr_namespace }}/omero-bifrost-test
+          tags: |
+            type=sha,format=short
+            type=raw,value=manual
+
+      - name: Build and publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -663,3 +663,36 @@ To install packages in `requirements.txt` in the current conda env:
 To test package, install using pip:
 
 `pip install -e .`
+
+## Container publishing to GHCR
+
+This repository includes a container image definition and two GitHub Actions workflows for publishing to GHCR.
+
+### Docker image
+
+- `Dockerfile` builds a lightweight Python image and installs OMERO-Bifrost directly from the `main` branch of this repository:
+  - `pip install "git+https://github.com/luiskuhn/omero-bifrost.git@main"`
+- The container entrypoint is `omero-bifrost`.
+
+### Production publish workflow (QBiC namespace)
+
+- Workflow: `.github/workflows/publish_container_ghcr.yml`
+- Trigger: **GitHub Release published** (`on: release: types: [published]`)
+- Target image: `ghcr.io/qbic-pipelines/omero-bifrost`
+- Tags produced: release tag + `latest`
+
+### Manual test publish workflow (personal namespace)
+
+- Workflow: `.github/workflows/publish_container_ghcr_test.yml`
+- Trigger: **manual** (`workflow_dispatch`)
+- Input: `ghcr_namespace` (for example your GH username)
+- Target image: `ghcr.io/<ghcr_namespace>/omero-bifrost-test`
+- Tags produced: short commit SHA + `manual`
+
+### Required permissions
+
+Both workflows use:
+- `permissions: packages: write`
+- `permissions: contents: read`
+
+Publishing uses `secrets.GITHUB_TOKEN` for GHCR login.
