@@ -24,7 +24,8 @@ RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
 # Install omero-bifrost package after dependency environment is pinned.
-RUN pip install "git+https://github.com/luiskuhn/omero-bifrost.git@main"
+COPY . .
+RUN pip install .
 
 ENTRYPOINT ["omero-bifrost"]
 CMD ["--help"]
