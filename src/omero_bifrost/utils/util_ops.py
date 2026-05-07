@@ -1,3 +1,5 @@
+"""Configuration and utility helpers used across CLI operations."""
+
 
 from dataclasses import dataclass
 

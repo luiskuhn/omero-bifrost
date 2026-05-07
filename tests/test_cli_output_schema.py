@@ -34,6 +34,19 @@ class TestCliOutputSchema(unittest.TestCase):
         self.assertIn("records", payload)
         self.assertEqual(payload["profiles"]["default"]["status"], "ok")
 
+
+    @patch("omero_bifrost.cli.get_omero_config", return_value=("u", "p", "h", 4064, "g"))
+    @patch("omero_bifrost.cli.omero_connect")
+    @patch("omero_bifrost.cli.export_ome_xml_file", return_value=CommandResult(0, "ok", "", ["omero"]))
+    def test_pull_ome_xmls_prints_xml_export_paths(self, _mock_export, mock_connect, _mock_cfg):
+        conn = mock_connect.return_value
+        conn.getObject.return_value = type("Img", (), {"getName": lambda self: "imgA"})()
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["pull", "ome-xmls", "./out", "--img-id", "7"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn(".ome.xml", result.stdout)
+
     @patch("omero_bifrost.cli.get_omero_config", return_value=("u", "p", "h", 4064, "g"))
     @patch("omero_bifrost.cli.omero_connect")
     @patch("omero_bifrost.cli.download_original_image_file", return_value=CommandResult(0, "ok", "", ["omero"]))

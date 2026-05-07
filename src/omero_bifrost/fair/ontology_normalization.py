@@ -1,3 +1,5 @@
+"""Ontology normalization helpers (currently NCIT-focused)."""
+
 from __future__ import annotations
 
 import re

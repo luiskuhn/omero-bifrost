@@ -1,3 +1,5 @@
+"""Pull operations for exporting/downloading OMERO image content."""
+
 from omero_bifrost.utils.omero_cli_runner import run_omero_cli
 
 
@@ -40,6 +42,29 @@ def export_ome_tiff_file(image_id, download_path, usr, pwd, host, port=4064, gro
         str(download_path),
         "--type",
         "TIFF",
+        f"Image:{image_id}",
+    ]
+    return run_omero_cli(cmd)
+
+
+def export_ome_xml_file(image_id, download_path, usr, pwd, host, port=4064, group=None):
+    import os
+
+    if int(image_id) < 0:
+        raise ValueError("image_id must be a non-negative integer.")
+
+    name, ext = os.path.splitext(download_path)
+    if ext != ".xml":
+        download_path = name + ".ome.xml"
+
+    cmd = [
+        "omero",
+        "export",
+        *_base_omero_cmd(usr, pwd, host, port, group),
+        "--file",
+        str(download_path),
+        "--type",
+        "OME-XML",
         f"Image:{image_id}",
     ]
     return run_omero_cli(cmd)

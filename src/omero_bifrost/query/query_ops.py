@@ -1,3 +1,5 @@
+"""Query operations for OMERO object and image discovery."""
+
 
 def fetch_all_objects(conn):
 
