@@ -22,7 +22,7 @@ workflow code.
 
 import typer
 from rich import print
-from typing import Annotated, List
+from typing import Annotated, List, Callable
 
 from omero_bifrost.utils.filter_expr import FilterParseError, parse_filter_exprs
 
@@ -35,6 +35,8 @@ from omero_bifrost.push.push_ops import attach_file_to_image, create_tag, add_ta
 from omero_bifrost.pull.pull_ops import download_original_image_file, export_ome_tiff_file, export_ome_xml_file
 from omero_bifrost.utils.omero_cli_runner import OmeroCliError
 from omero_bifrost.utils.output_ops import serialize_execution_output
+from omero_bifrost.federation.layer import federated_query, federated_push, federated_annotate, federated_pull, PullTarget
+from omero_bifrost.federation.runner import FederationRecord
 
 #####################################
 
@@ -76,6 +78,35 @@ def _emit_execution_output(records, *, profile: str, to_file: bool = False, to_c
         print(serialized)
 
 
+
+
+def _normalize_profiles(server_profiles: List[str] | None) -> List[str]:
+    if not server_profiles:
+        return ["default"]
+    return server_profiles
+
+
+def _federation_kwargs(fail_policy: str, retries: int, backoff_seconds: float, timeout_seconds: int) -> dict:
+    return {"fail_policy": fail_policy, "retries": retries, "backoff_seconds": backoff_seconds, "timeout_seconds": timeout_seconds}
+
+
+def _runner_execute(executor: Callable, profiles: List[str], per_profile_fn: Callable[[str], list[FederationRecord]], *, operation: str, fail_policy: str, retries: int, backoff_seconds: float, timeout_seconds: int):
+    from omero_bifrost.federation.runner import FederationRunner
+    runner = FederationRunner(fail_policy=fail_policy, retries=retries, backoff_seconds=backoff_seconds, timeout_seconds=timeout_seconds)
+    return runner.run(profiles, operation, per_profile_fn)
+
+
+def _emit_payload(payload, *, single_profile: bool, profile: str, to_file: bool, output_file_path: str):
+    if single_profile:
+        records = payload
+        _emit_execution_output(records, profile=profile, to_file=to_file, output_file_path=output_file_path)
+    else:
+        serialized = serialize_execution_output(payload)
+        if to_file:
+            with open(output_file_path, "w", encoding="utf-8") as handle:
+                handle.write(serialized + "\n")
+        else:
+            print(serialized)
 def _load_omero_config(config_file_path: str, server_profile: str):
     try:
         return get_omero_config(config_file_path, server_profile=server_profile)
@@ -86,20 +117,34 @@ def _load_omero_config(config_file_path: str, server_profile: str):
 @query_app.command("list-all", help="Query all accessible OMERO objects")
 def query_list_all(
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy", help="continue or fail-fast")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
-
-    objects = fetch_all_objects(conn)
-    records = [{"index": key, **value} for key, value in objects.items()]
-    _emit_execution_output(records, profile=server_profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path)
-
-    conn.close()
+    profiles = _normalize_profiles(server_profile)
+    if len(profiles) == 1:
+        profile = profiles[0]
+        omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, profile)
+        conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        objects = fetch_all_objects(conn)
+        records = [{"index": key, **value} for key, value in objects.items()]
+        _emit_execution_output(records, profile=profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path)
+        conn.close()
+        return
+    def _per_profile(profile: str):
+        omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, profile)
+        conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        objects = fetch_all_objects(conn)
+        conn.close()
+        return [FederationRecord(server_profile=profile, server_host=omero_host, operation="query", status="ok", local_object_id=str(k), object_type=v.get("type"), message=str(v)) for k, v in objects.items()]
+    payload = _runner_execute(federated_query, profiles, _per_profile, operation="query", fail_policy=fail_policy, retries=retries, backoff_seconds=backoff_seconds, timeout_seconds=timeout_seconds)
+    _emit_payload(payload, single_profile=False, profile="", to_file=to_file, output_file_path=output_file_path)
 
 
 @query_app.command("dataset-id", help="Query the ID of an OMERO dataset using project and dataset names")
@@ -107,12 +152,18 @@ def query_dataset_id(
         project: Annotated[str, typer.Argument(help="The project name to be looked for (assumes it is a unique ID)")],
         dataset: Annotated[str, typer.Argument(help="The dataset name to be looked for (assumes it is a unique ID)")],
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
     
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
@@ -129,7 +180,11 @@ def query_image_ids(
         kv_pair: Annotated[List[str], typer.Option(default=..., help="Pairs of key-values for query, in format '--kv-pair key1:value1 --kv-pair key2:value2'")] = [],
         tag: Annotated[List[str], typer.Option(default=..., help="Tag values for query, in format '--tag value1 --tag value2'")] = [],
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
@@ -147,6 +202,8 @@ def query_image_ids(
 
     tag_list = tag
 
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
@@ -191,33 +248,51 @@ def push_image_file(
         file_path: Annotated[str, typer.Argument(help="Path to the input image file")],
         dataset_id: Annotated[str, typer.Argument(help="ID of target dataset")],
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy", help="continue or fail-fast")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
-
-    try:
+    profiles = _normalize_profiles(server_profile)
+    if len(profiles) == 1:
+        profile = profiles[0]
+        omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, profile)
+        try:
+            img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        except (OmeroCliError, ValueError) as exc:
+            _handle_cli_error(exc)
+        records = [{"type": "image", "name": file_path, "id": str(id_i)} for id_i in img_ids]
+        _emit_execution_output(records, profile=profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path)
+        return
+    def _per_profile(profile: str):
+        omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, profile)
         img_ids = register_image_file_with_dataset_id(file_path, int(dataset_id), omero_username, omero_password, omero_host, str(omero_port), omero_group)
-    except (OmeroCliError, ValueError) as exc:
-        _handle_cli_error(exc)
-
-    records = [{"type": "image", "name": file_path, "id": str(id_i)} for id_i in img_ids]
-    _emit_execution_output(records, profile=server_profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path)
+        return [FederationRecord(server_profile=profile, server_host=omero_host, operation="push", status="ok", local_object_id=file_path, federated_object_id=str(i), object_type="image") for i in img_ids]
+    payload = _runner_execute(federated_push, profiles, _per_profile, operation="push", fail_policy=fail_policy, retries=retries, backoff_seconds=backoff_seconds, timeout_seconds=timeout_seconds)
+    _emit_payload(payload, single_profile=False, profile="", to_file=to_file, output_file_path=output_file_path)
 
 @push_app.command("img-folder", help="Import a folder containing image files into OMERO")
 def push_image_folder(
         folder_path: Annotated[str, typer.Argument(help="Path to the input folder containing image files (depth=1)")],
         dataset_id: Annotated[str, typer.Argument(help="ID of target dataset")],
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
 
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     try:
@@ -234,12 +309,18 @@ def push_key_value(
         kv_pair: Annotated[List[str], typer.Option(default=..., help="Key-value pairs in legacy format 'key:value'")],
         validation_policy: Annotated[str, typer.Option("--validation-policy", help="strict or lenient")] = "strict",
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
     
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
@@ -278,12 +359,18 @@ def push_image_tag(
         tag_value: Annotated[str, typer.Argument(help="Text value of OMERO tag")],
         tag_desc: Annotated[str, typer.Option("--desc", "-d", help="Tag description used when creating new tag")] = "",
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
 
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
 
@@ -310,12 +397,18 @@ def push_file_atch(
         file_path: Annotated[str, typer.Argument(help="Path to the attachment file")],
         image_id: Annotated[str, typer.Argument(help="ID of target image")],
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
         ):
 
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     try:
@@ -332,7 +425,11 @@ def pull_ome_tiff_files(
         img_id: Annotated[List[str], typer.Option(default=..., help="List of image IDs, in format '--img-id id1 --img-id id2'")] = [],
         id_list_path: Annotated[str, typer.Option("--list", "-l", help="Path to a TSV file with image IDs, takes priority if not empty")] = "",
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy", help="continue or fail-fast")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
@@ -347,28 +444,34 @@ def pull_ome_tiff_files(
         img_id_list = list(img_map.keys())
 
 
-    omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
-
-    conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
-
-    file_map = {}
-    for img_id in img_id_list:
-        image = conn.getObject("Image", img_id)
-        if not img_id in file_map.keys():
-                file_map[img_id] = str(image.getName()).replace(" ", "_")
-
-    records = []
-    for img_id in file_map.keys():
-        export_path = os.path.join(output_path, "omero_img_id_" + str(img_id) + "__" + file_map[img_id] + ".ome.tiff")
-        try:
-            result = export_ome_tiff_file(img_id, export_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
-        except (OmeroCliError, ValueError) as exc:
-            conn.close()
-            _handle_cli_error(exc)
-        records.append({"id": str(img_id), "output_path": export_path, "stdout": result.stdout, "stderr": result.stderr})
-
-    conn.close()
-    _emit_execution_output(records, profile=server_profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path, provenance={"command": "pull ome-tiffs"})
+    profiles = _normalize_profiles(server_profile)
+    if len(profiles) == 1:
+        profile = profiles[0]
+        omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, profile)
+        conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        file_map = {}
+        for image_id in img_id_list:
+            image = conn.getObject("Image", image_id)
+            if image_id not in file_map:
+                file_map[image_id] = str(image.getName()).replace(" ", "_")
+        records = []
+        for image_id in file_map.keys():
+            export_path = os.path.join(output_path, "omero_img_id_" + str(image_id) + "__" + file_map[image_id] + ".ome.tiff")
+            result = export_ome_tiff_file(image_id, export_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+            records.append({"id": str(image_id), "output_path": export_path, "stdout": result.stdout, "stderr": result.stderr})
+        conn.close()
+        _emit_execution_output(records, profile=profile, to_file=to_file, to_console=to_console, output_file_path=output_file_path, provenance={"command": "pull ome-tiffs"})
+        return
+    targets = [PullTarget(server_profile=profile, target_id=str(image_id), target_type="image") for profile in profiles for image_id in img_id_list]
+    def _pull_target(target: PullTarget):
+        omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, target.server_profile)
+        export_path = os.path.join(output_path, f"{target.server_profile}__omero_img_id_{target.target_id}.ome.tiff")
+        result = export_ome_tiff_file(target.target_id, export_path, omero_username, omero_password, omero_host, str(omero_port), omero_group)
+        return [FederationRecord(server_profile=target.server_profile, server_host=omero_host, operation="pull", status="ok", local_object_id=target.target_id, federated_object_id=export_path, object_type="image", message=result.stdout)]
+    from omero_bifrost.federation.runner import FederationRunner
+    runner = FederationRunner(fail_policy=fail_policy, retries=retries, backoff_seconds=backoff_seconds, timeout_seconds=timeout_seconds)
+    payload = runner.run([p for p in profiles], "pull", lambda prof: [r for t in targets if t.server_profile == prof for r in _pull_target(t)])
+    _emit_payload(payload, single_profile=False, profile="", to_file=to_file, output_file_path=output_file_path)
 
 
 
@@ -378,7 +481,11 @@ def pull_ome_xml_files(
         img_id: Annotated[List[str], typer.Option(default=..., help="List of image IDs, in format '--img-id id1 --img-id id2'")] = [],
         id_list_path: Annotated[str, typer.Option("--list", "-l", help="Path to a TSV file with image IDs, takes priority if not empty")] = "",
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         ):
 
     import os
@@ -389,6 +496,8 @@ def pull_ome_xml_files(
         img_map = img_map_from_tsv(id_list_path)
         img_id_list = list(img_map.keys())
 
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
@@ -418,7 +527,11 @@ def pull_original_image_files(
         img_id: Annotated[List[str], typer.Option(default=..., help="List of image IDs, in format '--img-id id1 --img-id id2'")] = [],
         id_list_path: Annotated[str, typer.Option("--list", "-l", help="Path to a TSV file with image IDs, takes priority if not empty")] = "",
         config_file_path: Annotated[str, typer.Option("--config", "-c", help=CONFIG_HELP_TEXT)] = "./imaging_config.properties",
-        server_profile: Annotated[str, typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = "default",
+        server_profile: Annotated[List[str], typer.Option("--server-profile", "-s", help=SERVER_PROFILE_HELP_TEXT)] = [],
+        fail_policy: Annotated[str, typer.Option("--fail-policy")] = "continue",
+        retries: Annotated[int, typer.Option("--retries")] = 0,
+        backoff_seconds: Annotated[float, typer.Option("--backoff-seconds")] = 0.5,
+        timeout_seconds: Annotated[int, typer.Option("--timeout-seconds")] = 300,
         output_file_path: Annotated[str, typer.Option("--output", "-o", help="Path to output JSON file")] = "./omero_bifrost_output.json",
         to_file: Annotated[bool, typer.Option(help="write JSON output to file")] = False,
         to_console: Annotated[bool, typer.Option("--to-console", help="Print JSON output to console")]=False
@@ -433,6 +546,8 @@ def pull_original_image_files(
         img_id_list = list(img_map.keys())
 
 
+    profiles = _normalize_profiles(server_profile)
+    server_profile = profiles[0]
     omero_username, omero_password, omero_host, omero_port, omero_group = _load_omero_config(config_file_path, server_profile)
 
     conn = omero_connect(omero_username, omero_password, omero_host, str(omero_port), omero_group)
