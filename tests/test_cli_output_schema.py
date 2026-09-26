@@ -69,6 +69,35 @@ class TestCliOutputSchema(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertNotIn("to-xml", result.stdout)
 
+    @patch("omero_bifrost.cli.fetch_all_objects", return_value={"1": {"type": "image"}})
+    @patch("omero_bifrost.cli.omero_connect")
+    @patch("omero_bifrost.cli.get_omero_config", return_value=("u", "p", "h", 4064, "g"))
+    def test_query_list_all_multi_profile_returns_federation_envelope(self, _cfg, _conn, _fetch):
+        runner = CliRunner()
+        result = runner.invoke(app, ["query", "list-all", "-s", "eu", "-s", "us"])
+        self.assertEqual(result.exit_code, 0)
+        payload = json.loads(result.stdout.strip())
+        self.assertIn("eu", payload["profiles"])
+        self.assertIn("us", payload["profiles"])
+
+    @patch("omero_bifrost.cli.register_image_file_with_dataset_id", return_value=["11"])
+    @patch("omero_bifrost.cli.get_omero_config", return_value=("u", "p", "h", 4064, "g"))
+    def test_push_img_file_multi_profile_fans_out(self, _cfg, mock_register):
+        runner = CliRunner()
+        result = runner.invoke(app, ["push", "img-file", "/tmp/a.tif", "1", "-s", "eu", "-s", "us"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(mock_register.call_count, 2)
+
+    @patch("omero_bifrost.cli.export_ome_tiff_file", return_value=CommandResult(0, "ok", "", ["omero"]))
+    @patch("omero_bifrost.cli.get_omero_config", return_value=("u", "p", "h", 4064, "g"))
+    def test_pull_ome_tiffs_multi_profile_uses_profile_targets(self, _cfg, _exp):
+        runner = CliRunner()
+        result = runner.invoke(app, ["pull", "ome-tiffs", "./out", "--img-id", "7", "-s", "eu", "-s", "us"])
+        self.assertEqual(result.exit_code, 0)
+        payload = json.loads(result.stdout.strip())
+        rec_profiles = sorted({r["server_profile"] for r in payload["records"]})
+        self.assertEqual(rec_profiles, ["eu", "us"])
+
 
 if __name__ == "__main__":
     unittest.main()
